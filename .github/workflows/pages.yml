@@ -41,3 +41,5 @@ jobs:
           path: project/dist/apps/web
       - name: Publicar
         uses: actions/deploy-pages@v4
+
+# GitHub Pages habilitado
