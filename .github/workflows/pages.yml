@@ -1,0 +1,45 @@
+name: Publicar frontend no GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agromig-frota-source-20260916.zip
+      - name: Extrair código-fonte
+        run: mkdir project && unzip -q agromig-frota-source-20260916.zip -d project
+      - name: Instalar dependências
+        run: npm ci --prefix project
+      - name: Gerar frontend
+        env:
+          BASE_PATH: /agromig-frota/
+          VITE_API_BASE_URL: https://agromig-frota.godoigd539.workers.dev/hcgi/api
+        run: npm run build --prefix project/apps/web
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+      - name: Fazer upload do artefato
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: project/dist/apps/web
+      - name: Publicar
+        uses: actions/deploy-pages@v4
