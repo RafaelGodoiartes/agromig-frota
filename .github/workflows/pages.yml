@@ -24,8 +24,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: agromig-frota-source-20260916.zip
       - name: Extrair código-fonte
         run: mkdir project && unzip -q agromig-frota-source-20260916.zip -d project
       - name: Instalar dependências
