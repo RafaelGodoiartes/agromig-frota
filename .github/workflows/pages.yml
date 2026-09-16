@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - name: Extrair código-fonte
-        run: mkdir project && unzip -q agromig-frota-source-20260916-v2.zip -d project
+        run: mkdir project && unzip -q agromig-frota-source-20260916-v3.zip -d project
       - name: Instalar dependências
         run: npm ci --prefix project
       - name: Gerar frontend
@@ -34,7 +34,3 @@ jobs:
       - name: Fazer upload do artefato
         uses: actions/upload-pages-artifact@v3
         with:
-          path: project/dist/apps/web
-      - name: Publicar
-        uses: actions/deploy-pages@v4
-# GitHub Pages habilitado
