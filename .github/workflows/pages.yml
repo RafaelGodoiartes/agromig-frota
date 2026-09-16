@@ -34,3 +34,6 @@ jobs:
       - name: Fazer upload do artefato
         uses: actions/upload-pages-artifact@v3
         with:
+          path: project/dist/apps/web
+      - name: Publicar
+        uses: actions/deploy-pages@v4
