@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - name: Extrair código-fonte
-        run: mkdir project && unzip -q agromig-frota-source-20260917-v9.zip -d project
+        run: mkdir project && unzip -q agromig-frota-source-20260917-v10.zip -d project
       - name: Migrar API para Google Apps Script
         run: cp migrated_api_min.js project/apps/web/src/lib/apiServerClient.js
       - name: Instalar dependências
