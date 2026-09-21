@@ -20,18 +20,6 @@ jobs:
     steps:
       - name: Baixar código
         uses: actions/checkout@v4
-      - name: Configurar Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Instalar dependências
-        run: npm ci
-      - name: Gerar frontend
-        env:
-          BASE_PATH: /agromig-frota/
-        run: npm run build --prefix apps/web
       - name: Configurar Pages
         uses: actions/configure-pages@v5
       - name: Fazer upload do artefato
