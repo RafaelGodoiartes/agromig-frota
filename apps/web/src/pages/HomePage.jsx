@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import {
     Fuel, Wrench, FileCheck, Gauge, RefreshCw, AlertTriangle,
-    Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound,
+    Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus,
 } from 'lucide-react';
 import {
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -56,6 +56,13 @@ const formatDateTime = (d, locale = 'pt-BR', opts = {}) => {
     const p = new Date(d);
     if (Number.isNaN(p.getTime())) return '';
     return p.toLocaleString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', ...opts });
+};
+const LOCAL_STATIONS_KEY = 'agromig.postos.cadastrados.v1';
+const readLocalStations = () => {
+    try {
+        const value = JSON.parse(window.localStorage.getItem(LOCAL_STATIONS_KEY) || '[]');
+        return Array.isArray(value) ? value.filter(Boolean) : [];
+    } catch { return []; }
 };
 
 const STATUS_COLORS = {
@@ -175,7 +182,12 @@ function LancamentoDialog({ type, data, onSaved }) {
     const [message, setMessage] = useState('');
     const [files, setFiles] = useState([]);
     const [vehicleSearch, setVehicleSearch] = useState('');
-    const [form, setForm] = useState({ data: today(), placa: '', projeto: '', item: 'Diesel S-10', posto: '', litros: '', precoLitro: '', km: '', fa: '', observacoes: '', tipo: 'Preventiva', status: 'AGENDADO', dataPrevista: today(), dataConclusao: '', descricao: '', peca: '', valor: '', responsavel: '', fornecedor: '', folderUrl: '', pin: '' });
+    const [form, setForm] = useState({ data: today(), placa: '', projeto: '', motorista: '', item: 'Diesel S-10', posto: '', litros: '', precoLitro: '', km: '', observacoes: '', tipo: 'Preventiva', status: 'AGENDADO', dataPrevista: today(), dataConclusao: '', descricao: '', peca: '', valor: '', responsavel: '', fornecedor: '', folderUrl: '', pin: '' });
+    const [extraStations, setExtraStations] = useState(() => (typeof window === 'undefined' ? [] : readLocalStations()));
+    const [postoDialogOpen, setPostoDialogOpen] = useState(false);
+    const [postoSaving, setPostoSaving] = useState(false);
+    const [postoMessage, setPostoMessage] = useState('');
+    const [newPosto, setNewPosto] = useState({ nome: '', cnpj: '', cidade: '', observacoes: '' });
     const masterVehicles = data?.veiculos || [];
     const vehicles = isFuel ? (data?.veiculosAbastecimento || []) : masterVehicles;
     const filteredVehicles = useMemo(() => {
@@ -190,7 +202,11 @@ function LancamentoDialog({ type, data, onSaved }) {
         const source = isFuel ? (data?.projetosAbastecimento || []) : masterVehicles.map((vehicle) => vehicle.projeto);
         return [...new Set(source.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     }, [data, isFuel, masterVehicles]);
-    const stations = useMemo(() => [...new Set((data?.abastecimento || []).map((r) => r.posto).filter(Boolean))].sort(), [data]);
+    const stations = useMemo(() => [...new Set([
+        ...(data?.postos || []),
+        ...(data?.abastecimento || []).map((r) => r.posto),
+        ...extraStations,
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [data, extraStations]);
     const scheduledPending = useMemo(() => (data?.manutencao || [])
         .filter(isScheduledPending)
         .sort((a, b) => String(a.dataPrevista || '').localeCompare(String(b.dataPrevista || ''))), [data]);
@@ -201,8 +217,48 @@ function LancamentoDialog({ type, data, onSaved }) {
     }, [form.litros, form.valor]);
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
     const selectVehicle = (placa) => {
-        const vehicle = masterVehicles.find((v) => v.placa === placa);
-        setForm((f) => ({ ...f, placa, projeto: isFuel ? '' : (vehicle?.projeto || f.projeto), folderUrl: vehicle?.pastaEvidencias || f.folderUrl }));
+        const vehicle = masterVehicles.find((v) => v.placa === placa)
+            || (data?.veiculosAbastecimento || []).find((v) => v.placa === placa);
+        const controlVehicle = (data?.veiculos || []).find((v) => v.placa === placa);
+        const utilization = (data?.utilizacao || []).find((v) => v.placa === placa);
+        const weekly = (data?.kmRodado || []).find((v) => v.placa === placa);
+        const project = vehicle?.projeto || controlVehicle?.projeto || utilization?.projeto || weekly?.projeto || '';
+        const driver = utilization?.motorista || weekly?.motorista || '';
+        setForm((f) => ({
+            ...f,
+            placa,
+            projeto: isFuel ? (project || f.projeto) : (vehicle?.projeto || f.projeto),
+            motorista: isFuel ? (driver || f.motorista) : f.motorista,
+            folderUrl: vehicle?.pastaEvidencias || f.folderUrl,
+        }));
+    };
+    const registerPosto = async (event) => {
+        event.preventDefault();
+        const nome = newPosto.nome.trim();
+        if (!nome) { setPostoMessage('Informe o nome do posto.'); return; }
+        setPostoSaving(true); setPostoMessage('');
+        try {
+            let backendMessage = '';
+            try {
+                const response = await apiServerClient.fetch('/fleet/posto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newPosto) });
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(body.message || 'Integração do cadastro indisponível.');
+                backendMessage = body.message || '';
+            } catch (integrationError) {
+                // A versão publicada do conector pode ainda não ter a rota de
+                // cadastro. Nesse caso, o posto continua disponível neste
+                // navegador e pode ser usado imediatamente no lançamento.
+                backendMessage = 'Posto salvo neste navegador e disponível para o lançamento.';
+            }
+            const nextStations = [...new Set([...extraStations, nome])];
+            setExtraStations(nextStations);
+            window.localStorage.setItem(LOCAL_STATIONS_KEY, JSON.stringify(nextStations));
+            set('posto', nome);
+            setNewPosto({ nome: '', cnpj: '', cidade: '', observacoes: '' });
+            setPostoDialogOpen(false);
+            if (backendMessage) setMessage(backendMessage);
+            await onSaved?.();
+        } catch (error) { setPostoMessage(error.message); } finally { setPostoSaving(false); }
     };
     const submit = async (event) => {
         event.preventDefault();
@@ -212,7 +268,7 @@ function LancamentoDialog({ type, data, onSaved }) {
             if (files.reduce((sum, file) => sum + file.size, 0) > 8 * 1024 * 1024) throw new Error('Os anexos devem somar no máximo 8 MB.');
             const attachments = isFuel ? [] : await Promise.all(files.map(fileAsBase64));
             const payload = isFuel
-                ? { data: form.data, placa: form.placa, projeto: form.projeto, item: form.item, posto: form.posto, litros: form.litros, valor: form.valor, precoLitro: fuelUnitPrice, km: form.km, fa: form.fa, observacoes: form.observacoes, pin: form.pin }
+                ? { data: form.data, placa: form.placa, projeto: form.projeto, motorista: form.motorista, item: form.item, posto: form.posto, litros: form.litros, valor: form.valor, precoLitro: fuelUnitPrice, km: form.km, observacoes: form.observacoes, pin: form.pin }
                 : { dataChamado: form.data, placa: form.placa, projeto: form.projeto, tipo: form.tipo, status: form.status, dataPrevista: form.dataPrevista, dataConclusao: form.dataConclusao, descricao: form.descricao, peca: form.peca, valor: form.valor, km: form.km, responsavel: form.responsavel, fornecedor: form.fornecedor, folderUrl: form.folderUrl, files: attachments, pin: form.pin };
             const response = await apiServerClient.fetch(`/fleet/${type}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const body = await response.json().catch(() => ({}));
@@ -262,11 +318,11 @@ function LancamentoDialog({ type, data, onSaved }) {
                     <Field label="KM / horímetro"><Input inputMode="decimal" value={form.km} onChange={(e) => set('km', e.target.value)} /></Field>
                     {isFuel ? <>
                         <Field label="Combustível"><Select value={form.item} onValueChange={(v) => set('item', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Diesel S-10', 'Diesel S-500', 'Gasolina Comum', 'Etanol', 'ARLA'].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
-                        <Field label="Posto"><Select value={form.posto} onValueChange={(v) => set('posto', v)} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{stations.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
+                    <Field label="Posto"><div className="flex gap-2"><Select value={form.posto} onValueChange={(v) => set('posto', v)} required><SelectTrigger className="flex-1"><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{stations.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select><Button type="button" variant="outline" size="icon" title="Cadastrar novo posto" onClick={() => { setPostoMessage(''); setPostoDialogOpen(true); }}><Plus className="h-4 w-4" /></Button></div></Field>
                         <Field label="Litros"><Input inputMode="decimal" value={form.litros} onChange={(e) => set('litros', e.target.value)} required /></Field>
                         <Field label="Valor total do abastecimento (R$)"><Input inputMode="decimal" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Ex.: 450,00" required /></Field>
                         <Field label="Preço por litro (calculado)"><Input value={fuelUnitPrice === null ? '' : fuelUnitPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} readOnly className="bg-muted/50" /></Field>
-                        <Field label="FA / responsável"><Input value={form.fa} onChange={(e) => set('fa', e.target.value)} /></Field>
+                        <Field label="Motorista / responsável"><Input value={form.motorista} onChange={(e) => set('motorista', e.target.value)} placeholder="Preenchido pela placa, mas pode ser alterado" /></Field>
                         <Field label="Observações"><Input value={form.observacoes} onChange={(e) => set('observacoes', e.target.value)} /></Field>
                     </> : <>
                         <Field label="Tipo"><Select value={form.tipo} onValueChange={(v) => set('tipo', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Preventiva', 'Corretiva', 'Outros'].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
@@ -280,6 +336,19 @@ function LancamentoDialog({ type, data, onSaved }) {
                         <Field label="Responsável / aprovador"><Input value={form.responsavel} onChange={(e) => set('responsavel', e.target.value)} /></Field>
                         <Field label="Fornecedor"><Input value={form.fornecedor} onChange={(e) => set('fornecedor', e.target.value)} /></Field>
                     </>}
+                    {isFuel && <Dialog open={postoDialogOpen} onOpenChange={setPostoDialogOpen}>
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader><DialogTitle>Cadastrar novo posto</DialogTitle><DialogDescription>O posto ficará disponível nos próximos lançamentos de abastecimento.</DialogDescription></DialogHeader>
+                            <form onSubmit={registerPosto} className="grid gap-3">
+                                <Field label="Nome do posto"><Input value={newPosto.nome} onChange={(e) => setNewPosto((v) => ({ ...v, nome: e.target.value }))} required autoFocus /></Field>
+                                <Field label="CNPJ (opcional)"><Input value={newPosto.cnpj} onChange={(e) => setNewPosto((v) => ({ ...v, cnpj: e.target.value }))} /></Field>
+                                <Field label="Cidade (opcional)"><Input value={newPosto.cidade} onChange={(e) => setNewPosto((v) => ({ ...v, cidade: e.target.value }))} /></Field>
+                                <Field label="Observações"><Input value={newPosto.observacoes} onChange={(e) => setNewPosto((v) => ({ ...v, observacoes: e.target.value }))} /></Field>
+                                {postoMessage && <p className="text-sm text-red-600">{postoMessage}</p>}
+                                <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setPostoDialogOpen(false)}>Cancelar</Button><Button type="submit" disabled={postoSaving}>{postoSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Cadastrar posto</Button></div>
+                            </form>
+                        </DialogContent>
+                    </Dialog>}
                     {!isFuel && <>
                         <Field label="Link da pasta do veículo no Drive"><Input type="url" value={form.folderUrl} onChange={(e) => set('folderUrl', e.target.value)} placeholder="https://drive.google.com/drive/folders/..." required={files.length > 0} /></Field>
                         <Field label="Nota fiscal / fotos de avarias">
@@ -419,23 +488,25 @@ function KmSemanalDialog({ data, onSaved }) {
 export default function HomePage() {
     const { data, loading, error, refresh } = useFleetData();
     const [tab, setTab] = useState('abastecimento');
-    const [filters, setFilters] = useState({ periodStart: '', periodEnd: '', projeto: 'all', posto: 'all', placa: 'all' });
+    const [filters, setFilters] = useState({ periodStart: '', periodEnd: '', projeto: 'all', posto: 'all', placa: 'all', tipoManutencao: 'all', servico: 'all', statusVeiculo: 'all' });
     const [periodOpen, setPeriodOpen] = useState(false);
     const [draftPeriod, setDraftPeriod] = useState({ from: undefined, to: undefined });
     const [search, setSearch] = useState('');
 
     const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
     const clearFilters = () => {
-        setFilters({ periodStart: '', periodEnd: '', projeto: 'all', posto: 'all', placa: 'all' });
+        setFilters({ periodStart: '', periodEnd: '', projeto: 'all', posto: 'all', placa: 'all', tipoManutencao: 'all', servico: 'all', statusVeiculo: 'all' });
         setSearch('');
     };
 
     // option lists derived from data
     const options = useMemo(() => {
-        if (!data) return { projetos: [], postos: [], placas: [] };
+        if (!data) return { projetos: [], postos: [], placas: [], tiposManutencao: [], servicos: [] };
         const projetos = new Set();
         const postos = new Set();
         const placas = new Set();
+        const tiposManutencao = new Set();
+        const servicos = new Set();
         data.abastecimento.forEach((r) => {
             if (r.projeto) projetos.add(r.projeto);
             if (r.posto) postos.add(r.posto);
@@ -444,6 +515,9 @@ export default function HomePage() {
         data.manutencao.forEach((r) => {
             if (r.projeto) projetos.add(r.projeto);
             if (r.placa) placas.add(r.placa);
+            if (r.tipo) tiposManutencao.add(r.tipo);
+            const service = maintenanceService(r);
+            if (service) servicos.add(service);
         });
         data.veiculos.forEach((r) => {
             if (r.projeto) projetos.add(r.projeto);
@@ -455,10 +529,12 @@ export default function HomePage() {
             projetos: [...projetos].filter(Boolean).sort(),
             postos: [...postos].filter(Boolean).sort(),
             placas: [...placas].filter(Boolean).sort(),
+            tiposManutencao: [...tiposManutencao].filter(Boolean).sort(),
+            servicos: [...servicos].filter(Boolean).sort(),
         };
     }, [data]);
 
-    const hasActiveFilters = filters.periodStart || filters.periodEnd || ['projeto', 'posto', 'placa'].some((key) => filters[key] !== 'all') || search.trim() !== '';
+    const hasActiveFilters = filters.periodStart || filters.periodEnd || ['projeto', 'posto', 'placa', 'tipoManutencao', 'servico', 'statusVeiculo'].some((key) => filters[key] !== 'all') || search.trim() !== '';
     const periodLabel = filters.periodStart
         ? `${formatDate(filters.periodStart)}${filters.periodEnd ? ` até ${formatDate(filters.periodEnd)}` : ''}`
         : 'Todos os períodos';
@@ -636,6 +712,9 @@ export default function HomePage() {
                                 <FilterSelect label="Projeto" value={filters.projeto} onChange={(v) => setF('projeto', v)} options={options.projetos} />
                                 <FilterSelect label="Posto" value={filters.posto} onChange={(v) => setF('posto', v)} options={options.postos} />
                                 <FilterSelect label="Placa / Veículo" value={filters.placa} onChange={(v) => setF('placa', v)} options={options.placas} />
+                                <FilterSelect label="Tipo de manutenção" value={filters.tipoManutencao} onChange={(v) => setF('tipoManutencao', v)} options={options.tiposManutencao} />
+                                <FilterSelect label="Tipo de serviço" value={filters.servico} onChange={(v) => setF('servico', v)} options={options.servicos} />
+                                <FilterSelect label="Status do veículo" value={filters.statusVeiculo} onChange={(v) => setF('statusVeiculo', v)} options={['ativos', 'inativos']} format={(value) => value === 'ativos' ? 'Veículos ativos' : 'Veículos inativos'} />
                                 <div className="flex flex-col gap-1">
                                     <label className="text-xs font-medium text-muted-foreground">Buscar</label>
                                     <div className="relative">
@@ -676,7 +755,7 @@ export default function HomePage() {
 
                         {/* Tab content */}
                         {tab === 'abastecimento' && <AbastecimentoView data={data} filters={filters} search={search} />}
-                        {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} />}
+                        {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
                         {tab === 'documentacao' && <DocumentacaoView data={data} filters={filters} search={search} />}
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
                     </>
@@ -735,27 +814,52 @@ function matchesFuelRow(row, filters, search) {
     return !query || searchKey(`${row.placa} ${row.veiculo} ${row.item} ${row.posto} ${row.projeto}`).includes(query);
 }
 
+function maintenanceService(row) {
+    return String(row?.descricao || row?.servico || row?.peca || '').trim();
+}
+
+function getActiveVehicleKeys(data) {
+    const cadastro = new Set((data?.veiculos || []).map((vehicle) => vehicleKey(vehicle.placa)).filter(Boolean));
+    const documentados = new Set((data?.documentacao || []).map((row) => vehicleKey(row.placa)).filter(Boolean));
+    return new Set([...cadastro].filter((key) => documentados.size === 0 || documentados.has(key)));
+}
+
+function matchesVehicleStatus(placa, statusVeiculo, activeKeys) {
+    if (!statusVeiculo || statusVeiculo === 'all') return true;
+    const active = activeKeys.has(vehicleKey(placa));
+    return statusVeiculo === 'ativos' ? active : !active;
+}
+
 function AbastecimentoView({ data, filters, search }) {
     const [fuelFilter, setFuelFilter] = useState('all');
-    const rows = useMemo(() => data.abastecimento.filter((row) => matchesFuelRow(row, filters, search)), [data.abastecimento, filters, search]);
-    const visibleRows = useMemo(() => fuelFilter === 'postos' ? rows.filter((r) => r.posto) : rows, [rows, fuelFilter]);
+    const [projectFilter, setProjectFilter] = useState('all');
+    const [monthFilter, setMonthFilter] = useState('all');
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
+    const rows = useMemo(() => data.abastecimento
+        .filter((row) => matchesFuelRow(row, filters, search))
+        .filter((row) => {
+            return matchesVehicleStatus(row.placa, filters.statusVeiculo, activeVehicleKeys);
+        }), [data.abastecimento, filters, search, activeVehicleKeys]);
+    const projectRows = useMemo(() => projectFilter === 'all' ? rows : rows.filter((row) => row.projeto === projectFilter), [rows, projectFilter]);
+    const monthRows = useMemo(() => monthFilter === 'all' ? projectRows : projectRows.filter((row) => row.anoMes === monthFilter), [projectRows, monthFilter]);
+    const visibleRows = useMemo(() => fuelFilter === 'postos' ? monthRows.filter((r) => r.posto) : monthRows, [monthRows, fuelFilter]);
 
     const kpis = useMemo(() => {
-        const litros = rows.reduce((s, r) => s + (r.litros || 0), 0);
-        const valor = rows.reduce((s, r) => s + (r.valor || 0), 0);
-        const preco = rows.filter((r) => r.precoLitro > 0);
+        const litros = monthRows.reduce((s, r) => s + (r.litros || 0), 0);
+        const valor = monthRows.reduce((s, r) => s + (r.valor || 0), 0);
+        const preco = monthRows.filter((r) => r.precoLitro > 0);
         const precoMedio = preco.length ? preco.reduce((s, r) => s + r.precoLitro, 0) / preco.length : 0;
-        const postos = new Set(rows.map((r) => r.posto).filter(Boolean));
-        return { litros, valor, precoMedio, count: rows.length, postos: postos.size };
-    }, [rows]);
+        const postos = new Set(monthRows.map((r) => r.posto).filter(Boolean));
+        return { litros, valor, precoMedio, count: monthRows.length, postos: postos.size };
+    }, [monthRows]);
 
     const chartPeriod = useMemo(() => {
         const map = {};
-        rows.forEach((r) => {
+        monthRows.forEach((r) => {
             if (!r.data) return;
             const start = dateFromIso(filters.periodStart);
             const end = dateFromIso(filters.periodEnd);
-            const span = start && end ? Math.round((end - start) / 86400000) + 1 : 999;
+            const span = monthFilter !== 'all' ? 31 : (start && end ? Math.round((end - start) / 86400000) + 1 : 999);
             const date = dateFromIso(r.data);
             let k;
             let label;
@@ -771,7 +875,7 @@ function AbastecimentoView({ data, filters, search }) {
             } else {
                 k = r.anoMes;
                 const month = date.toLocaleDateString('pt-BR', { month: 'long' });
-                label = `${month.charAt(0).toUpperCase()}${month.slice(1)}${new Set(rows.map((item) => (item.anoMes || '').slice(0, 4))).size > 1 ? `/${r.anoMes.slice(0, 4)}` : ''}`;
+                label = `${month.charAt(0).toUpperCase()}${month.slice(1)}${new Set(monthRows.map((item) => (item.anoMes || '').slice(0, 4))).size > 1 ? `/${r.anoMes.slice(0, 4)}` : ''}`;
             }
             if (!map[k]) map[k] = { periodo: k, label, valor: 0, litros: 0 };
             map[k].valor += r.valor || 0;
@@ -779,32 +883,46 @@ function AbastecimentoView({ data, filters, search }) {
         });
         const start = dateFromIso(filters.periodStart);
         const end = dateFromIso(filters.periodEnd);
-        const span = start && end ? Math.round((end - start) / 86400000) + 1 : 999;
+        const span = monthFilter !== 'all' ? 31 : (start && end ? Math.round((end - start) / 86400000) + 1 : 999);
         return { data: Object.values(map).sort((a, b) => a.periodo.localeCompare(b.periodo)), title: span <= 31 ? 'Valor em combustível por dia (R$)' : span <= 120 ? 'Valor em combustível por semana (R$)' : 'Valor em combustível por mês (R$)' };
-    }, [rows, filters.periodStart, filters.periodEnd]);
+    }, [monthRows, monthFilter, filters.periodStart, filters.periodEnd]);
 
     const porProjeto = useMemo(() => {
         const map = {};
-        rows.forEach((r) => {
+        monthRows.forEach((r) => {
             const k = r.projeto || 's/projeto';
             if (!map[k]) map[k] = { nome: k, litros: 0, valor: 0 };
             map[k].litros += r.litros || 0;
             map[k].valor += r.valor || 0;
         });
         return Object.values(map).sort((a, b) => b.valor - a.valor).slice(0, 10);
-    }, [rows]);
+    }, [monthRows]);
+
+    const projectOptions = useMemo(() => (
+        [...new Set(rows.map((row) => row.projeto).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    ), [rows]);
+
+    const monthOptions = useMemo(() => (
+        [...new Set(rows.map((row) => row.anoMes).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b))
+    ), [rows]);
 
     const kmL = useMemo(() => {
         const unidadePorPlaca = new Map((data.veiculos || []).map((vehicle) => [vehicleKey(vehicle.placa), normalizedStatus(vehicle.unidade)]));
         const grupos = new Map();
         data.abastecimento.forEach((row, sourceIndex) => {
             const key = vehicleKey(row.placa);
+            const nonVehicleFuel = searchKey(`${row.placa} ${row.veiculo} ${row.item}`);
+            if (nonVehicleFuel.includes('galao') || nonVehicleFuel.includes('embarcac') || /^equ\d*/.test(searchKey(row.placa))) return;
+            if (filters.statusVeiculo !== 'all' && (filters.statusVeiculo === 'ativos') !== activeVehicleKeys.has(key)) return;
             if (!key || unidadePorPlaca.get(key)?.includes('HORA') || !row.data || !Number.isFinite(row.km)) return;
             if (!grupos.has(key)) grupos.set(key, []);
             grupos.get(key).push({ ...row, sourceIndex });
         });
 
         const intervalos = [];
+        let outliers = 0;
         grupos.forEach((itens) => {
             itens.sort((a, b) => a.data.localeCompare(b.data) || a.sourceIndex - b.sourceIndex);
             let anterior = null;
@@ -818,7 +936,17 @@ function AbastecimentoView({ data, filters, search }) {
                 anterior = atual;
                 if (!(Number.isFinite(atual.litros) && atual.litros > 0)) return;
                 if (!matchesFuelRow(atual, filters, search)) return;
+                if (projectFilter !== 'all' && atual.projeto !== projectFilter) return;
+                if (monthFilter !== 'all' && atual.anoMes !== monthFilter) return;
                 if (fuelFilter === 'postos' && !atual.posto) return;
+                // Leituras acima de 20 km/L são incompatíveis com o limite operacional definido
+                // e normalmente indicam KM digitado incorretamente ou leitura faltante.
+                // Mantemos o lançamento original na planilha, mas não deixamos que ele
+                // distorça a média do dashboard.
+                if (kmRodados / atual.litros > 20) {
+                    outliers += 1;
+                    return;
+                }
                 intervalos.push({ ...atual, kmRodados });
             });
         });
@@ -837,8 +965,8 @@ function AbastecimentoView({ data, filters, search }) {
             .sort((a, b) => b.kmLitro - a.kmLitro);
         const totalKm = intervalos.reduce((sum, row) => sum + row.kmRodados, 0);
         const totalLitros = intervalos.reduce((sum, row) => sum + row.litros, 0);
-        return { porVeiculo, mediaFrota: totalLitros > 0 ? totalKm / totalLitros : null };
-    }, [data.abastecimento, data.veiculos, filters, search, fuelFilter]);
+        return { porVeiculo, mediaFrota: totalLitros > 0 ? totalKm / totalLitros : null, outliers };
+    }, [data.abastecimento, data.veiculos, filters, search, fuelFilter, projectFilter, monthFilter, activeVehicleKeys]);
 
     return (
         <section className="flex flex-col gap-5">
@@ -850,7 +978,26 @@ function AbastecimentoView({ data, filters, search }) {
                 <KpiCard label="Postos" value={NUM(kpis.postos)} active={fuelFilter === 'postos'} onClick={() => setFuelFilter((value) => value === 'postos' ? 'all' : 'postos')} />
                 <KpiCard label="Média KM/L" value={kmL.mediaFrota === null ? '—' : NUM(kmL.mediaFrota, 2)} sub={`${kmL.porVeiculo.length} veículo(s) calculado(s)`} />
             </div>
-            <ActiveFilter label={fuelFilter === 'postos' ? 'Registros com posto informado' : ''} onClear={() => setFuelFilter('all')} />
+            {kmL.outliers > 0 && (
+                <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>KM/L para revisão</AlertTitle>
+                    <AlertDescription>
+                        {NUM(kmL.outliers)} intervalo(s) acima de 20 km/L foram retirados da média por ultrapassarem o limite definido. Revise o KM ou os litros lançados na planilha de abastecimento.
+                    </AlertDescription>
+                </Alert>
+            )}
+            <ActiveFilter label={filters.statusVeiculo !== 'all' ? `Frota: ${filters.statusVeiculo}` : monthFilter !== 'all' ? `Mês: ${monthFilter}` : projectFilter !== 'all' ? `Projeto: ${projectFilter}` : fuelFilter === 'postos' ? 'Registros com posto informado' : ''} onClear={() => { setProjectFilter('all'); setMonthFilter('all'); setFuelFilter('all'); }} />
+            <Card className="p-4 flex flex-wrap items-end gap-3 bg-[#f8fcf9] border-[#cfe8d5]">
+                <FilterSelect label="Filtrar projeto no abastecimento" value={projectFilter} onChange={setProjectFilter} options={projectOptions} />
+                <FilterSelect label="Selecionar mês do gráfico" value={monthFilter} onChange={setMonthFilter} options={monthOptions} format={(value) => {
+                    const [year, month] = value.split('-');
+                    return `${month}/${year}`;
+                }} />
+                {projectFilter !== 'all' && <Button variant="outline" size="sm" onClick={() => setProjectFilter('all')}>Todos os projetos</Button>}
+                {monthFilter !== 'all' && <Button variant="outline" size="sm" onClick={() => setMonthFilter('all')}>Todos os meses</Button>}
+                <p className="text-xs text-muted-foreground pb-1">Você também pode clicar em uma barra do gráfico “Litros por projeto”.</p>
+            </Card>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <ChartCard title={chartPeriod.title}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -870,7 +1017,10 @@ function AbastecimentoView({ data, filters, search }) {
                             <XAxis type="number" tick={{ fontSize: 11 }} />
                             <YAxis type="category" dataKey="nome" tick={{ fontSize: 10 }} width={120} />
                             <Tooltip formatter={(v) => `${NUM(v, 1)} L`} />
-                            <Bar dataKey="litros" fill="#0891b2" radius={[0, 4, 4, 0]} />
+                            <Bar dataKey="litros" fill="#0891b2" radius={[0, 4, 4, 0]} onClick={(entry) => {
+                                const name = entry?.payload?.nome || entry?.nome || entry?.activeLabel;
+                                if (name) setProjectFilter((value) => value === name ? 'all' : name);
+                            }} cursor="pointer" />
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
@@ -890,7 +1040,8 @@ function AbastecimentoView({ data, filters, search }) {
                     )}
                 </ChartCard>
                 <Card className="p-4 flex flex-col gap-3">
-                    <h3 className="text-sm font-semibold text-foreground">Desempenho por veículo</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Desempenho por veículo (KM/L)</h3>
+                    <p className="text-xs text-muted-foreground">Galões, embarcações e equipamentos sem hodômetro não entram no cálculo.</p>
                     {kmL.porVeiculo.length === 0 ? <EmptyHint>Sem leituras sucessivas válidas para os filtros.</EmptyHint> : (
                         <ScrollTable head={<>{['Placa', 'Veículo', 'KM rodados', 'Litros', 'KM/L', 'Intervalos'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
                             {kmL.porVeiculo.map((row) => (
@@ -936,8 +1087,9 @@ function AbastecimentoView({ data, filters, search }) {
     );
 }
 
-function ManutencaoView({ data, filters, search }) {
+function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }) {
     const [typeFilter, setTypeFilter] = useState('all');
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const rows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return data.manutencao.filter((r) => {
@@ -946,23 +1098,30 @@ function ManutencaoView({ data, filters, search }) {
             if (filters.periodEnd && rowDate > filters.periodEnd) return false;
             if (filters.projeto !== 'all' && r.projeto !== filters.projeto) return false;
             if (filters.placa !== 'all' && r.placa !== filters.placa) return false;
+            if (!matchesVehicleStatus(r.placa, filters.statusVeiculo, activeVehicleKeys)) return false;
+            if (filters.tipoManutencao !== 'all' && r.tipo !== filters.tipoManutencao) return false;
+            if (filters.servico !== 'all' && maintenanceService(r) !== filters.servico) return false;
+            if (typeFilter !== 'all' && r.tipo !== typeFilter) return false;
             if (q) {
                 const blob = `${r.placa} ${r.veiculo} ${r.descricao} ${r.peca} ${r.categoria} ${r.fornecedor}`.toLowerCase();
                 if (!blob.includes(q)) return false;
             }
             return true;
         });
-    }, [data.manutencao, filters, search]);
-    const visibleRows = useMemo(() => typeFilter === 'all' ? rows : rows.filter((r) => r.tipo === typeFilter), [rows, typeFilter]);
+    }, [data.manutencao, filters, search, typeFilter, activeVehicleKeys]);
+    const visibleRows = rows;
     const scheduledPending = useMemo(() => {
         const q = search.trim().toLowerCase();
         return data.manutencao
             .filter(isScheduledPending)
             .filter((r) => filters.projeto === 'all' || r.projeto === filters.projeto)
             .filter((r) => filters.placa === 'all' || r.placa === filters.placa)
+            .filter((r) => matchesVehicleStatus(r.placa, filters.statusVeiculo, activeVehicleKeys))
+            .filter((r) => filters.tipoManutencao === 'all' || r.tipo === filters.tipoManutencao)
+            .filter((r) => filters.servico === 'all' || maintenanceService(r) === filters.servico)
             .filter((r) => !q || `${r.placa} ${r.veiculo} ${r.projeto} ${r.descricao} ${r.fornecedor}`.toLowerCase().includes(q))
             .sort((a, b) => String(a.dataPrevista || '').localeCompare(String(b.dataPrevista || '')));
-    }, [data.manutencao, filters.projeto, filters.placa, search]);
+    }, [data.manutencao, filters.projeto, filters.placa, filters.statusVeiculo, filters.tipoManutencao, filters.servico, search, activeVehicleKeys]);
 
     const kpis = useMemo(() => {
         const valor = rows.reduce((s, r) => s + (r.custoTotal ?? r.valor ?? 0), 0);
@@ -991,6 +1150,15 @@ function ManutencaoView({ data, filters, search }) {
 
     return (
         <section className="flex flex-col gap-5">
+            <Card className="p-4 flex flex-wrap items-end gap-3 bg-[#f8fcf9] border-[#cfe8d5]">
+                <div className="w-full text-sm font-semibold text-[#1f6b3d]">Filtros de manutenção</div>
+                <FilterSelect label="Projeto" value={filters.projeto} onChange={(v) => onFilterChange('projeto', v)} options={filterOptions.projetos} />
+                <FilterSelect label="Tipo de manutenção" value={filters.tipoManutencao} onChange={(v) => onFilterChange('tipoManutencao', v)} options={filterOptions.tiposManutencao} />
+                <FilterSelect label="Tipo de serviço" value={filters.servico} onChange={(v) => onFilterChange('servico', v)} options={filterOptions.servicos} />
+                <FilterSelect label="Placa / Veículo" value={filters.placa} onChange={(v) => onFilterChange('placa', v)} options={filterOptions.placas} />
+                <FilterSelect label="Status do veículo" value={filters.statusVeiculo} onChange={(v) => onFilterChange('statusVeiculo', v)} options={['ativos', 'inativos']} format={(value) => value === 'ativos' ? 'Veículos ativos' : 'Veículos inativos'} />
+                {(filters.periodStart || filters.periodEnd) && <Badge variant="outline" className="h-9 items-center border-[#b7d5c0] text-[#1f6b3d]">Período: {filters.periodStart || 'início'} até {filters.periodEnd || 'fim'}</Badge>}
+            </Card>
             {scheduledPending.length > 0 && (
                 <div className="flex flex-col gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
                     <div className="flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" />Manutenções agendadas e não realizadas ({scheduledPending.length})</div>
@@ -1077,6 +1245,7 @@ function ManutencaoView({ data, filters, search }) {
 
 function DocumentacaoView({ data, filters, search }) {
     const [statusFilter, setStatusFilter] = useState('all');
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const identifierByPlate = useMemo(() => new Map(
         (data.veiculos || []).map((vehicle) => [vehicleKey(vehicle.placa), String(vehicle.identificador || '').trim()]),
     ), [data.veiculos]);
@@ -1084,6 +1253,7 @@ function DocumentacaoView({ data, filters, search }) {
         const q = search.trim().toLowerCase();
         return data.documentacao.filter((r) => {
             if (filters.placa !== 'all' && r.placa !== filters.placa) return false;
+            if (!matchesVehicleStatus(r.placa, filters.statusVeiculo, activeVehicleKeys)) return false;
             if (q) {
                 const identificador = identifierByPlate.get(vehicleKey(r.placa)) || '';
                 const blob = `${r.placa} ${identificador} ${r.veiculo} ${r.documento} ${r.status}`.toLowerCase();
@@ -1091,7 +1261,7 @@ function DocumentacaoView({ data, filters, search }) {
             }
             return true;
         });
-    }, [data.documentacao, filters, search, identifierByPlate]);
+    }, [data.documentacao, filters, search, identifierByPlate, activeVehicleKeys]);
     const visibleRows = useMemo(() => statusFilter === 'all' ? rows : rows.filter((r) => r.status === statusFilter), [rows, statusFilter]);
 
     const porStatus = useMemo(() => {
@@ -1186,17 +1356,19 @@ function InfoLine({ label, value }) {
 }
 
 function PneusView({ data, filters, search }) {
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const rows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return data.pneus.filter((r) => {
             if (filters.placa !== 'all' && r.placa !== filters.placa) return false;
+            if (!matchesVehicleStatus(r.placa, filters.statusVeiculo, activeVehicleKeys)) return false;
             if (q) {
                 const blob = `${r.placa} ${r.veiculo} ${r.modelo} ${r.situacao}`.toLowerCase();
                 if (!blob.includes(q)) return false;
             }
             return true;
         });
-    }, [data.pneus, filters, search]);
+    }, [data.pneus, filters, search, activeVehicleKeys]);
 
     const kpis = useMemo(() => {
         const qtde = rows.reduce((s, r) => s + (r.qtde || 0), 0);
@@ -1243,17 +1415,19 @@ function PneusView({ data, filters, search }) {
 
 function KmView({ data, filters, search }) {
     const [franquiaFilter, setFranquiaFilter] = useState('all');
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const rows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return data.kmRodado.filter((r) => {
             if (filters.placa !== 'all' && r.placa !== filters.placa) return false;
+            if (!matchesVehicleStatus(r.placa, filters.statusVeiculo, activeVehicleKeys)) return false;
             if (q) {
                 const blob = `${r.placa} ${r.veiculo} ${r.situacao}`.toLowerCase();
                 if (!blob.includes(q)) return false;
             }
             return true;
         });
-    }, [data.kmRodado, filters, search]);
+    }, [data.kmRodado, filters, search, activeVehicleKeys]);
     const visibleRows = useMemo(() => franquiaFilter === 'all' ? rows : rows.filter((r) => franquiaFilter === 'ultrapassou' ? r.ultrapassou : !r.ultrapassou), [rows, franquiaFilter]);
 
     const kpis = useMemo(() => {
@@ -1322,6 +1496,7 @@ function KmView({ data, filters, search }) {
 }
 
 function UtilizacaoView({ data, filters, search }) {
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const rows = useMemo(() => {
         const kmByPlate = new Map((data.kmRodado || []).map((row) => [vehicleKey(row.placa), row]));
         const source = Array.isArray(data.utilizacao) && data.utilizacao.length
@@ -1338,10 +1513,11 @@ function UtilizacaoView({ data, filters, search }) {
         return source.filter((row) => {
             if (filters.projeto !== 'all' && row.projeto !== filters.projeto) return false;
             if (filters.placa !== 'all' && row.placa !== filters.placa) return false;
+            if (!matchesVehicleStatus(row.placa, filters.statusVeiculo, activeVehicleKeys)) return false;
             if (q && !`${row.placa} ${row.veiculo} ${row.projeto} ${row.motorista}`.toLowerCase().includes(q)) return false;
             return row.placa;
         }).sort((a, b) => String(a.placa).localeCompare(String(b.placa), 'pt-BR'));
-    }, [data.utilizacao, data.kmRodado, data.veiculos, filters, search]);
+    }, [data.utilizacao, data.kmRodado, data.veiculos, filters, search, activeVehicleKeys]);
 
     const kpis = useMemo(() => {
         const withDriver = rows.filter((row) => String(row.motorista || '').trim()).length;
@@ -1407,6 +1583,7 @@ function UtilizacaoView({ data, filters, search }) {
 }
 
 function EvidenciasView({ data, filters, search }) {
+    const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const rows = useMemo(() => {
         const q = search.trim().toLowerCase();
         return (data.evidencias || []).filter((r) => {
@@ -1414,10 +1591,11 @@ function EvidenciasView({ data, filters, search }) {
             if (filters.periodEnd && r.data > filters.periodEnd) return false;
             if (filters.projeto !== 'all' && r.projeto !== filters.projeto) return false;
             if (filters.placa !== 'all' && r.placa !== filters.placa) return false;
+            if (!matchesVehicleStatus(r.placa, filters.statusVeiculo, activeVehicleKeys)) return false;
             if (q && !`${r.tipo} ${r.placa} ${r.veiculo} ${r.projeto} ${r.descricao} ${r.arquivo}`.toLowerCase().includes(q)) return false;
             return true;
         }).sort((a, b) => (b.data || '').localeCompare(a.data || ''));
-    }, [data.evidencias, filters, search]);
+    }, [data.evidencias, filters, search, activeVehicleKeys]);
     return (
         <section className="flex flex-col gap-4">
             <div>

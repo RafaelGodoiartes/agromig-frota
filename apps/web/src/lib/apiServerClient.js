@@ -35,10 +35,30 @@ function responseFromPayload(payload, status = 200) {
     });
 }
 
+function normalizeFutureFuelDates(payload) {
+    if (!payload || !Array.isArray(payload.abastecimento)) return payload;
+    const currentYear = new Date().getFullYear();
+    const minimumYear = 2024;
+    return {
+        ...payload,
+        abastecimento: payload.abastecimento.map((row) => {
+            const date = text(row?.data);
+            const match = date.match(/^(\d{4})(-\d{2}-\d{2})$/);
+            if (!match) return row;
+            const year = Number(match[1]);
+            const correctedYear = year < minimumYear ? minimumYear : (year > currentYear ? currentYear : year);
+            if (correctedYear === year) return row;
+            const correctedDate = `${correctedYear}${match[2]}`;
+            return { ...row, data: correctedDate, anoMes: correctedDate.slice(0, 7) };
+        }),
+    };
+}
+
 async function readResponse(response) {
     const textBody = await response.text();
     let payload = {};
     try { payload = textBody ? JSON.parse(textBody) : {}; } catch { payload = { ok: false, message: 'Resposta inválida do Google Apps Script.' }; }
+    payload = normalizeFutureFuelDates(payload);
     if (payload && payload.meta) cachedData = payload;
     if (payload && payload.ok === false) return responseFromPayload(payload, 400);
     return responseFromPayload(payload, response.status);
@@ -69,7 +89,13 @@ function commandForRoute(route, input) {
         const key = `${date.replace(/-/g, '')}-${plate}-${Date.now()}`;
         return {
             action: 'append', spreadsheetId: SHEET1_ID, sheetName: 'Gastos', pin: input.pin,
-            values: [date, plate, vehicle.veiculo, text(input.projeto), 'Combustível', text(input.item), total, num(input.km), text(input.fa), liters, unitPrice, text(input.posto), '', text(input.observacoes), 'PENDENTE', '', key],
+            values: [date, plate, vehicle.veiculo, text(input.projeto), 'Combustível', text(input.item), total, num(input.km), text(input.motorista || input.fa), liters, unitPrice, text(input.posto), '', text(input.observacoes), 'PENDENTE', '', key],
+        };
+    }
+    if (route === '/fleet/posto') {
+        return {
+            action: 'registerPosto', spreadsheetId: SHEET1_ID,
+            nome: text(input.nome), cnpj: text(input.cnpj), cidade: text(input.cidade), observacoes: text(input.observacoes),
         };
     }
     if (route === '/fleet/manutencao') {
