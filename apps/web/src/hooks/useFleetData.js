@@ -35,7 +35,7 @@ export function useFleetData() {
         const refreshWhenVisible = () => {
             if (document.visibilityState === 'visible') load(true);
         };
-        const intervalId = window.setInterval(refreshWhenVisible, 5 * 60 * 1000);
+        const intervalId = window.setInterval(refreshWhenVisible, 60 * 1000);
         document.addEventListener('visibilitychange', refreshWhenVisible);
         window.addEventListener('focus', refreshWhenVisible);
         return () => {

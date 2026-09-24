@@ -118,7 +118,9 @@ const apiServerClient = {
     fetch: async (url, options = {}) => {
         const method = String(options.method || 'GET').toUpperCase();
         if (method === 'GET') {
-            const endpoint = `${API_SERVER_URL}?action=readFleetData${url.includes('refresh') ? `&t=${Date.now()}` : ''}`;
+            // Sempre usa um carimbo novo para impedir que o navegador ou um
+            // proxy entregue uma resposta antiga da aba Documentação.
+            const endpoint = `${API_SERVER_URL}?action=readFleetData&t=${Date.now()}`;
             const response = await window.fetch(endpoint, { method: 'GET' });
             return readResponse(response);
         }
