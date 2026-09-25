@@ -923,6 +923,11 @@ function AbastecimentoView({ data, filters, search }) {
 
         const intervalos = [];
         let outliers = 0;
+        // Limites operacionais específicos por veículo. O TXQ7H01 (Strada)
+        // não deve ultrapassar 14 km/L; os demais seguem o limite geral de 20.
+        const limiteKmLPorPlaca = new Map([
+            [vehicleKey('TXQ7H01'), 14],
+        ]);
         grupos.forEach((itens) => {
             itens.sort((a, b) => a.data.localeCompare(b.data) || a.sourceIndex - b.sourceIndex);
             let anterior = null;
@@ -939,11 +944,12 @@ function AbastecimentoView({ data, filters, search }) {
                 if (projectFilter !== 'all' && atual.projeto !== projectFilter) return;
                 if (monthFilter !== 'all' && atual.anoMes !== monthFilter) return;
                 if (fuelFilter === 'postos' && !atual.posto) return;
-                // Leituras acima de 20 km/L são incompatíveis com o limite operacional definido
+                const limiteKmL = limiteKmLPorPlaca.get(key) || 20;
+                // Leituras acima do limite operacional do veículo são incompatíveis
                 // e normalmente indicam KM digitado incorretamente ou leitura faltante.
                 // Mantemos o lançamento original na planilha, mas não deixamos que ele
                 // distorça a média do dashboard.
-                if (kmRodados / atual.litros > 20) {
+                if (kmRodados / atual.litros > limiteKmL) {
                     outliers += 1;
                     return;
                 }
@@ -983,7 +989,7 @@ function AbastecimentoView({ data, filters, search }) {
                     <AlertTriangle className="h-4 w-4" />
                     <AlertTitle>KM/L para revisão</AlertTitle>
                     <AlertDescription>
-                        {NUM(kmL.outliers)} intervalo(s) acima de 20 km/L foram retirados da média por ultrapassarem o limite definido. Revise o KM ou os litros lançados na planilha de abastecimento.
+                        {NUM(kmL.outliers)} intervalo(s) acima do limite operacional do veículo foram retirados da média. No TXQ7H01, o limite considerado é 14 km/L; revise o KM ou os litros lançados na planilha de abastecimento.
                     </AlertDescription>
                 </Alert>
             )}
