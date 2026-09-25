@@ -1007,12 +1007,12 @@ function AbastecimentoView({ data, filters, search }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <ChartCard title={chartPeriod.title}>
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartPeriod.data} margin={{ top: 28, right: 8, bottom: 8, left: 8 }}>
+                        <BarChart data={chartPeriod.data} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                             <YAxis tick={{ fontSize: 11 }} width={48} />
                             <Tooltip formatter={(v) => BRL(v)} />
-                            <Bar dataKey="valor" fill="#2563eb" radius={[4, 4, 0, 0]} label={{ position: 'top', formatter: (value) => BRL(value) }} />
+                            <Bar dataKey="valor" fill="#2563eb" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
