@@ -603,7 +603,7 @@ export default function HomePage() {
                     <div className="flex items-center gap-3 min-w-0">
                         <div className="h-10 w-[175px] sm:w-[215px] shrink-0 overflow-hidden flex items-center">
                             <img
-                                src={`${import.meta.env.BASE_URL}agromig-logo.png`}
+                                src="/agromig-frota/agromig-logo.png"
                                 alt="Agromig — Solução e Recuperação Ambiental"
                                 className="h-auto w-full object-contain object-left"
                             />
