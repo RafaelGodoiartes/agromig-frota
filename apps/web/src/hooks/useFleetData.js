@@ -4,10 +4,16 @@ import apiServerClient from '@/lib/apiServerClient';
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
 
 async function loadEpicollectChecklist() {
-    const response = await fetch(EPICOLLECT_CHECKLIST_URL, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error(`Epicollect5 respondeu ${response.status}`);
-    const payload = await response.json();
-    return Array.isArray(payload?.data?.entries) ? payload.data.entries : [];
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    try {
+        const response = await fetch(EPICOLLECT_CHECKLIST_URL, { headers: { Accept: 'application/json' }, signal: controller.signal });
+        if (!response.ok) throw new Error(`Epicollect5 respondeu ${response.status}`);
+        const payload = await response.json();
+        return Array.isArray(payload?.data?.entries) ? payload.data.entries : [];
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
 }
 
 // Fetches the normalized fleet dataset from the Express proxy that reads the
@@ -28,11 +34,12 @@ export function useFleetData() {
                 throw new Error(body.message || `Erro ${res.status} ao buscar dados`);
             }
             const json = await res.json();
-            // O checklist é público no Epicollect5. Uma falha temporária nele
-            // não deve impedir o painel principal de carregar.
-            let checklist = [];
-            try { checklist = await loadEpicollectChecklist(); } catch { /* painel continua disponível */ }
-            setData({ ...json, checklist });
+            // O checklist é sincronizado em segundo plano. A planilha e o
+            // painel principal nunca ficam bloqueados se o Epicollect5 demorar.
+            setData({ ...json, checklist: [] });
+            loadEpicollectChecklist()
+                .then((checklist) => setData((current) => current ? { ...current, checklist } : current))
+                .catch(() => { /* sincronização será tentada na próxima atualização */ });
         } catch (err) {
             setError(err.message || 'Falha ao carregar o painel.');
         } finally {
