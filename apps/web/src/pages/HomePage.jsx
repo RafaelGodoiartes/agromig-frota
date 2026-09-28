@@ -31,13 +31,6 @@ import apiServerClient from '@/lib/apiServerClient';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
-const COMPACT_BRL = (v) => {
-    if (v === null || v === undefined || isNaN(v)) return '—';
-    const value = Number(v);
-    if (Math.abs(value) >= 1000000) return `R$ ${(value / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}MM`;
-    if (Math.abs(value) >= 1000) return `R$ ${(value / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}K`;
-    return BRL(value);
-};
 const vehicleKey = (value) => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 const searchKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const inputNumber = (value) => {
@@ -1019,7 +1012,7 @@ function AbastecimentoView({ data, filters, search }) {
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                             <YAxis tick={{ fontSize: 11 }} width={48} />
                             <Tooltip formatter={(v) => BRL(v)} />
-                            <Bar dataKey="valor" fill="#2563eb" radius={[4, 4, 0, 0]} label={{ position: 'top', formatter: COMPACT_BRL }} />
+                            <Bar dataKey="valor" fill="#2563eb" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
