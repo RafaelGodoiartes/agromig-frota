@@ -38,3 +38,20 @@ test('preserves input records and matches only completions supplied for the sele
     assert.equal(result.displayName('Unregistered Driver'), 'Unregistered Driver');
     assert.deepEqual(registered, ['ANA LIMA', 'José de Souza']);
 });
+
+test('confirmed aliases match the registered drivers and retain their full display names', () => {
+    const names = ['SIDENIO BISPO MARTINS', 'CARLOS ALEXANDRE DE SOUZA SANTOS'];
+    const result = summarizeChecklistDrivers(names, ['SidenioBispo', 'carlos alexandre', ...names]);
+    assert.deepEqual(result.missingDrivers, []);
+    assert.equal(result.completedCount, 2);
+    assert.equal(result.displayName('sidênio bispo'), names[0]);
+    assert.equal(result.displayName('CarlosAlexandre'), names[1]);
+});
+
+test('aliases are exact and do not credit a different driver or an unsubmitted period', () => {
+    const names = ['SIDENIO BISPO MARTINS', 'CARLOS ALEXANDRE DE SOUZA SANTOS', 'CARLOS ALEXANDRE DE OLIVEIRA'];
+    const result = summarizeChecklistDrivers(names, ['CarlosAlexandre']);
+    assert.deepEqual(result.missingDrivers, [names[0], names[2]]);
+    assert.deepEqual(summarizeChecklistDrivers(names, []).missingDrivers, names);
+    assert.deepEqual(summarizeChecklistDrivers(names, ['Carlos', 'Sidenio']).missingDrivers, names);
+});
