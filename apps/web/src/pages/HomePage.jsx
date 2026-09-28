@@ -28,6 +28,7 @@ import { Calendar as DateCalendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ptBR } from 'date-fns/locale';
 import apiServerClient from '@/lib/apiServerClient';
+import { driverNameKey, summarizeChecklistDrivers } from '@/lib/checklistDrivers';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -1669,36 +1670,39 @@ function ChecklistView({ data, filters, search }) {
         if (filters.projeto !== 'all' && checklistProject(row) !== filters.projeto) return false;
         if (filters.placa !== 'all' && checklistPlate(row) !== filters.placa) return false;
         const q = searchKey(search);
-        return !q || searchKey(`${checklistDriver(row)} ${checklistPlate(row)} ${checklistProject(row)} ${row.title || ''}`).includes(q);
+        return !q || searchKey(`${checklistDriver(row)} ${checklistPlate(row)} ${checklistProject(row)} ${row.title || ''}`).includes(q)
+            || driverNameKey(checklistDriver(row)).includes(driverNameKey(search));
     }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.checklist, filters, search]);
     const issues = rows.filter(checklistHasIssue);
-    const registeredDrivers = useMemo(() => {
+    const driverSummary = useMemo(() => {
         const names = (data.motoristas || []).map((row) => row.nome || row.motorista || row.name || checklistDriver(row)).map((value) => String(value || '').trim()).filter((value) => value && value !== '—');
-        return [...new Map(names.map((name) => [searchKey(name), name])).values()];
-    }, [data.motoristas]);
-    const completedDrivers = new Set(rows.map((row) => searchKey(checklistDriver(row))).filter(Boolean));
-    const missingDrivers = registeredDrivers.filter((name) => !completedDrivers.has(searchKey(name)));
+        return summarizeChecklistDrivers(names, rows.map(checklistDriver));
+    }, [data.motoristas, rows]);
+    const { missingDrivers } = driverSummary;
+    const checklistReady = data.checklistLoaded && !data.checklistLoading && !data.checklistError;
     return (
         <section className="flex flex-col gap-4">
             <div>
                 <h3 className="text-sm font-semibold">Checklist de veículos e máquinas</h3>
                 <p className="text-xs text-muted-foreground">Fonte: Epicollect5 · projeto checklist-de-veiculos-e-maquinas. Filtre por período, projeto, motorista ou veículo.</p>
             </div>
+            {data.checklistLoading && <p role="status" className="flex items-center gap-2 text-sm text-[#1f7a46]"><Loader2 className="h-4 w-4 animate-spin" />Conferindo os checklists realizados…</p>}
+            {data.checklistError && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle className="text-sm font-semibold">Não foi possível atualizar os checklists</AlertTitle><AlertDescription className="text-xs">{data.checklistError} {data.checklistLoaded ? 'Os registros abaixo são da última consulta concluída.' : 'A lista de motoristas pendentes será calculada quando a consulta terminar.'}</AlertDescription></Alert>}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard label="Checklists realizados" value={NUM(rows.length)} accent="text-[#1f7a46]" />
-                <KpiCard label="Motoristas que fizeram" value={NUM(completedDrivers.size)} />
-                <KpiCard label="Inconformidades" value={NUM(issues.length)} accent={issues.length ? 'text-red-600' : 'text-[#1f7a46]'} />
-                <KpiCard label="Motoristas pendentes" value={NUM(missingDrivers.length)} accent={missingDrivers.length ? 'text-amber-600' : 'text-[#1f7a46]'} />
+                <KpiCard label="Checklists realizados" value={data.checklistLoaded ? NUM(rows.length) : '—'} accent="text-[#1f7a46]" />
+                <KpiCard label="Motoristas que fizeram" value={data.checklistLoaded ? NUM(driverSummary.completedCount) : '—'} />
+                <KpiCard label="Inconformidades" value={data.checklistLoaded ? NUM(issues.length) : '—'} accent={issues.length ? 'text-red-600' : 'text-[#1f7a46]'} />
+                <KpiCard label="Motoristas pendentes" value={checklistReady ? NUM(missingDrivers.length) : '—'} accent={checklistReady && missingDrivers.length ? 'text-amber-600' : 'text-[#1f7a46]'} />
             </div>
-            {missingDrivers.length > 0 && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle className="text-sm font-semibold">Motoristas sem checklist</AlertTitle><AlertDescription className="text-xs">{missingDrivers.join(' · ')}</AlertDescription></Alert>}
-            {rows.length === 0 ? <EmptyHint>Nenhum checklist encontrado para os filtros selecionados.</EmptyHint> : (
+            {checklistReady && missingDrivers.length > 0 && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle className="text-sm font-semibold">Motoristas sem checklist</AlertTitle><AlertDescription className="text-xs">{missingDrivers.join(' · ')}</AlertDescription></Alert>}
+            {rows.length === 0 ? (checklistReady ? <EmptyHint>Nenhum checklist encontrado para os filtros selecionados.</EmptyHint> : null) : (
                 <ScrollTable head={<>{['Data', 'Motorista', 'Placa / veículo', 'Projeto', 'Situação', 'Detalhes'].map((h) => <TableHead key={h}>{h}</TableHead>)}</>}>
                     {rows.map((row) => {
                         const issue = checklistHasIssue(row);
                         const date = row.created_at || row.uploaded_at;
                         return <TableRow key={row.ec5_uuid || `${date}-${checklistPlate(row)}`}>
                             <TableCell className="text-xs">{formatDate(date)}</TableCell>
-                            <TableCell className="text-xs">{checklistDriver(row)}</TableCell>
+                            <TableCell className="text-xs">{driverSummary.displayName(checklistDriver(row))}</TableCell>
                             <TableCell className="text-xs font-mono">{checklistPlate(row)}</TableCell>
                             <TableCell className="text-xs">{checklistProject(row)}</TableCell>
                             <TableCell><Badge className={issue ? 'bg-red-100 text-red-700 hover:bg-red-100' : 'bg-green-100 text-green-700 hover:bg-green-100'}>{issue ? 'Inconforme' : 'OK'}</Badge></TableCell>

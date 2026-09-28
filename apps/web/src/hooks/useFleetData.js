@@ -10,7 +10,10 @@ async function loadEpicollectChecklist() {
         const response = await fetch(EPICOLLECT_CHECKLIST_URL, { headers: { Accept: 'application/json' }, signal: controller.signal });
         if (!response.ok) throw new Error(`Epicollect5 respondeu ${response.status}`);
         const payload = await response.json();
-        return Array.isArray(payload?.data?.entries) ? payload.data.entries : [];
+        if (!Array.isArray(payload?.data?.entries)) {
+            throw new Error('Resposta de checklist inválida.');
+        }
+        return payload.data.entries;
     } finally {
         window.clearTimeout(timeoutId);
     }
@@ -23,6 +26,7 @@ export function useFleetData() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const loadingRef = useRef(false);
+    const checklistRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
         if (loadingRef.current) return;
@@ -39,10 +43,29 @@ export function useFleetData() {
             const json = await res.json();
             // O checklist é sincronizado em segundo plano. A planilha e o
             // painel principal nunca ficam bloqueados se o Epicollect5 demorar.
-            setData({ ...json, checklist: [] });
+            const checklistRequestId = ++checklistRequestRef.current;
+            setData((current) => ({
+                ...json,
+                checklist: current?.checklist ?? [],
+                checklistLoaded: current?.checklistLoaded === true,
+                checklistLoading: true,
+                checklistError: null,
+            }));
             loadEpicollectChecklist()
-                .then((checklist) => setData((current) => current ? { ...current, checklist } : current))
-                .catch(() => { /* sincronização será tentada na próxima atualização */ });
+                .then((checklist) => setData((current) => (
+                    current && checklistRequestRef.current === checklistRequestId
+                        ? { ...current, checklist, checklistLoaded: true, checklistLoading: false, checklistError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && checklistRequestRef.current === checklistRequestId
+                        ? {
+                            ...current,
+                            checklistLoading: false,
+                            checklistError: 'Não foi possível atualizar os checklists. Tente atualizar novamente.',
+                        }
+                        : current
+                )));
         } catch (err) {
             setError(err.message || 'Falha ao carregar o painel.');
         } finally {
