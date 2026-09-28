@@ -966,7 +966,7 @@ function AbastecimentoView({ data, filters, search }) {
                 if (projectFilter !== 'all' && atual.projeto !== projectFilter) return;
                 if (monthFilter !== 'all' && atual.anoMes !== monthFilter) return;
                 if (fuelFilter === 'postos' && !atual.posto) return;
-                const limiteKmL = limiteKmLPorPlaca.get(key) || 20;
+                const limiteKmL = limiteKmLPorPlaca.get(vehicleKey(atual.placa)) || 20;
                 // Leituras acima do limite operacional do veículo são incompatíveis
                 // e normalmente indicam KM digitado incorretamente ou leitura faltante.
                 // Mantemos o lançamento original na planilha, mas não deixamos que ele
