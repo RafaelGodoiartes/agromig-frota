@@ -206,8 +206,21 @@ function LancamentoDialog({ type, data, onSaved }) {
         });
     }, [vehicles, masterVehicles, vehicleSearch]);
     const projects = useMemo(() => {
-        const source = isFuel ? (data?.projetosAbastecimento || []) : masterVehicles.map((vehicle) => vehicle.projeto);
-        return [...new Set(source.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        const source = isFuel
+            ? [
+                ...(data?.projetosAbastecimento || []),
+                ...(data?.abastecimento || []).map((row) => row?.projeto),
+            ]
+            : masterVehicles.map((vehicle) => vehicle.projeto);
+        const unique = new Map();
+        source
+            .map((value) => String(value ?? '').trim())
+            .filter(Boolean)
+            .forEach((value) => {
+                const key = searchKey(value);
+                if (!unique.has(key)) unique.set(key, value);
+            });
+        return [...unique.values()].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
     }, [data, isFuel, masterVehicles]);
     const stations = useMemo(() => [...new Set([
         ...(data?.postos || []),
