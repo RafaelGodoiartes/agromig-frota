@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import apiServerClient from '@/lib/apiServerClient';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
@@ -22,8 +22,11 @@ export function useFleetData() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const loadingRef = useRef(false);
 
     const load = useCallback(async (force = false) => {
+        if (loadingRef.current) return;
+        loadingRef.current = true;
         setLoading(true);
         setError(null);
         try {
@@ -43,6 +46,7 @@ export function useFleetData() {
         } catch (err) {
             setError(err.message || 'Falha ao carregar o painel.');
         } finally {
+            loadingRef.current = false;
             setLoading(false);
         }
     }, []);
