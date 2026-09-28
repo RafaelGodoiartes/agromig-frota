@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import {
     Fuel, Wrench, FileCheck, Gauge, RefreshCw, AlertTriangle,
-    Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus,
+    Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus, ClipboardCheck,
 } from 'lucide-react';
 import {
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -89,6 +89,7 @@ const TABS = [
     { id: 'manutencao', label: 'Manutenção', icon: Wrench },
     { id: 'documentacao', label: 'Documentação', icon: FileCheck },
     { id: 'km', label: 'KM Rodado', icon: Gauge },
+    { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
 ];
 
 // --- small presentational helpers -----------------------------------------
@@ -778,6 +779,7 @@ export default function HomePage() {
                         {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
                         {tab === 'documentacao' && <DocumentacaoView data={data} filters={filters} search={search} />}
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
+                        {tab === 'checklist' && <ChecklistView data={data} filters={filters} search={search} />}
                     </>
                 )}
             </main>
@@ -1640,6 +1642,69 @@ function EvidenciasView({ data, filters, search }) {
                             <TableCell><Button asChild size="sm" variant="outline" className="gap-1.5"><a href={r.url} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" />{r.arquivo || 'Abrir anexo'}</a></Button></TableCell>
                         </TableRow>
                     ))}
+                </ScrollTable>
+            )}
+        </section>
+    );
+}
+
+const checklistValue = (row, fragments) => {
+    const key = Object.keys(row || {}).find((candidate) => fragments.some((fragment) => searchKey(candidate).includes(fragment)));
+    return key ? String(row[key] ?? '').trim() : '';
+};
+const checklistDriver = (row) => checklistValue(row, ['nome do condutor', 'nome_do_condutor', 'condutor', 'motorista']) || '—';
+const checklistPlate = (row) => checklistValue(row, ['placas', 'placa']) || '—';
+const checklistProject = (row) => checklistValue(row, ['projeto']) || '—';
+const checklistHasIssue = (row) => Object.entries(row || {}).some(([key, value]) => {
+    if (!value || ['created_at', 'uploaded_at', 'ec5_uuid', 'title'].includes(key)) return false;
+    const normalized = searchKey(value);
+    return normalized === 'nao' || normalized === 'inconforme' || normalized.includes('nao conforme');
+});
+
+function ChecklistView({ data, filters, search }) {
+    const rows = useMemo(() => (data.checklist || []).filter((row) => {
+        const date = String(row.created_at || row.uploaded_at || '').slice(0, 10);
+        if (filters.periodStart && date < filters.periodStart) return false;
+        if (filters.periodEnd && date > filters.periodEnd) return false;
+        if (filters.projeto !== 'all' && checklistProject(row) !== filters.projeto) return false;
+        if (filters.placa !== 'all' && checklistPlate(row) !== filters.placa) return false;
+        const q = searchKey(search);
+        return !q || searchKey(`${checklistDriver(row)} ${checklistPlate(row)} ${checklistProject(row)} ${row.title || ''}`).includes(q);
+    }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.checklist, filters, search]);
+    const issues = rows.filter(checklistHasIssue);
+    const registeredDrivers = useMemo(() => {
+        const names = (data.motoristas || []).map((row) => row.nome || row.motorista || row.name || checklistDriver(row)).map((value) => String(value || '').trim()).filter((value) => value && value !== '—');
+        return [...new Map(names.map((name) => [searchKey(name), name])).values()];
+    }, [data.motoristas]);
+    const completedDrivers = new Set(rows.map((row) => searchKey(checklistDriver(row))).filter(Boolean));
+    const missingDrivers = registeredDrivers.filter((name) => !completedDrivers.has(searchKey(name)));
+    return (
+        <section className="flex flex-col gap-4">
+            <div>
+                <h3 className="text-sm font-semibold">Checklist de veículos e máquinas</h3>
+                <p className="text-xs text-muted-foreground">Fonte: Epicollect5 · projeto checklist-de-veiculos-e-maquinas. Filtre por período, projeto, motorista ou veículo.</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <KpiCard label="Checklists realizados" value={NUM(rows.length)} accent="text-[#1f7a46]" />
+                <KpiCard label="Motoristas que fizeram" value={NUM(completedDrivers.size)} />
+                <KpiCard label="Inconformidades" value={NUM(issues.length)} accent={issues.length ? 'text-red-600' : 'text-[#1f7a46]'} />
+                <KpiCard label="Motoristas pendentes" value={NUM(missingDrivers.length)} accent={missingDrivers.length ? 'text-amber-600' : 'text-[#1f7a46]'} />
+            </div>
+            {missingDrivers.length > 0 && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle className="text-sm font-semibold">Motoristas sem checklist</AlertTitle><AlertDescription className="text-xs">{missingDrivers.join(' · ')}</AlertDescription></Alert>}
+            {rows.length === 0 ? <EmptyHint>Nenhum checklist encontrado para os filtros selecionados.</EmptyHint> : (
+                <ScrollTable head={<>{['Data', 'Motorista', 'Placa / veículo', 'Projeto', 'Situação', 'Detalhes'].map((h) => <TableHead key={h}>{h}</TableHead>)}</>}>
+                    {rows.map((row) => {
+                        const issue = checklistHasIssue(row);
+                        const date = row.created_at || row.uploaded_at;
+                        return <TableRow key={row.ec5_uuid || `${date}-${checklistPlate(row)}`}>
+                            <TableCell className="text-xs">{formatDate(date)}</TableCell>
+                            <TableCell className="text-xs">{checklistDriver(row)}</TableCell>
+                            <TableCell className="text-xs font-mono">{checklistPlate(row)}</TableCell>
+                            <TableCell className="text-xs">{checklistProject(row)}</TableCell>
+                            <TableCell><Badge className={issue ? 'bg-red-100 text-red-700 hover:bg-red-100' : 'bg-green-100 text-green-700 hover:bg-green-100'}>{issue ? 'Inconforme' : 'OK'}</Badge></TableCell>
+                            <TableCell className="text-xs max-w-80">{issue ? Object.entries(row).filter(([, value]) => searchKey(value).includes('nao') || searchKey(value).includes('inconforme')).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'Nenhuma resposta de inconformidade identificada'}</TableCell>
+                        </TableRow>;
+                    })}
                 </ScrollTable>
             )}
         </section>
