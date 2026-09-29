@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import {
     Fuel, Wrench, FileCheck, Gauge, RefreshCw, AlertTriangle,
     Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus, ClipboardCheck,
+    Bell, CheckCircle2, Clock3, ListFilter,
 } from 'lucide-react';
 import {
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -86,6 +87,7 @@ const TIPO_COLORS = {
 };
 
 const TABS = [
+    { id: 'pendencias', label: 'Pendências', icon: Bell },
     { id: 'abastecimento', label: 'Abastecimento', icon: Fuel },
     { id: 'manutencao', label: 'Manutenção', icon: Wrench },
     { id: 'documentacao', label: 'Documentação', icon: FileCheck },
@@ -514,11 +516,40 @@ export default function HomePage() {
     const [periodOpen, setPeriodOpen] = useState(false);
     const [draftPeriod, setDraftPeriod] = useState({ from: undefined, to: undefined });
     const [search, setSearch] = useState('');
+    const [notificationHistory, setNotificationHistory] = useState(readNotificationHistory);
+    const [notificationPopoverOpen, setNotificationPopoverOpen] = useState(false);
+
+    const activeNotifications = useMemo(() => buildFleetNotifications(data), [data]);
+    const notificationRecords = useMemo(() => mergeNotificationHistory(activeNotifications, notificationHistory), [activeNotifications, notificationHistory]);
+
+    useEffect(() => {
+        if (!data || data.checklistLoading) return;
+        setNotificationHistory((current) => {
+            const now = new Date().toISOString();
+            const activeKeys = new Set(activeNotifications.map((item) => item.key));
+            const map = new Map(current.map((item) => [item.key, item]));
+            activeNotifications.forEach((item) => map.set(item.key, { ...item, status: 'Pendente', resolvedAt: '' }));
+            current.forEach((item) => {
+                if (!activeKeys.has(item.key) && item.status === 'Pendente') map.set(item.key, { ...item, status: 'Resolvida', resolvedAt: item.resolvedAt || now });
+            });
+            const next = [...map.values()].slice(-500);
+            try { window.localStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify(next)); } catch { /* armazenamento local opcional */ }
+            return next;
+        });
+    }, [activeNotifications, data, data?.checklistLoading]);
 
     const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
     const clearFilters = () => {
         setFilters({ periodStart: '', periodEnd: '', projeto: 'all', posto: 'all', placa: 'all', tipoManutencao: 'all', servico: 'all', statusVeiculo: 'all' });
         setSearch('');
+    };
+
+    const openNotification = (item) => {
+        const nextTab = item.category === 'abastecimento' ? 'abastecimento' : item.category === 'documentacao' ? 'documentacao' : 'checklist';
+        setTab(nextTab);
+        setSearch(item.driver || (item.plate !== '—' ? item.plate : ''));
+        if (item.plate && item.plate !== '—') setF('placa', item.plate);
+        setNotificationPopoverOpen(false);
     };
 
     // option lists derived from data
@@ -641,6 +672,32 @@ export default function HomePage() {
                                 Atualizado em {formatDateTime(data.meta.fetchedAt, 'pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </span>
                         )}
+                        <Popover open={notificationPopoverOpen} onOpenChange={setNotificationPopoverOpen}>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" aria-label={`Pendências da frota: ${activeNotifications.length}`} className="relative gap-2 border-[#b7d5c0] text-[#1f6b3d] hover:bg-[#edf7ef] hover:text-[#15532e]">
+                                    <Bell className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Pendências</span>
+                                    <span className={cn('min-w-5 rounded-full px-1.5 text-[11px] font-bold leading-5', activeNotifications.length ? 'bg-red-600 text-white' : 'bg-[#d7e7dc] text-[#1f6b3d]')}>{activeNotifications.length}</span>
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-[min(92vw,380px)] p-0">
+                                <div className="border-b border-border px-4 py-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div><p className="font-semibold">Pendências da frota</p><p className="text-xs text-muted-foreground">Somente itens ativos</p></div>
+                                        <Badge className={activeNotifications.length ? 'bg-red-600 hover:bg-red-600' : 'bg-[#1f7a46] hover:bg-[#1f7a46]'}>{activeNotifications.length}</Badge>
+                                    </div>
+                                </div>
+                                <div className="max-h-72 overflow-auto p-3">
+                                    {activeNotifications.length === 0 ? <p className="flex items-center gap-2 p-2 text-sm text-[#1f7a46]"><CheckCircle2 className="h-4 w-4" />Nenhuma pendência ativa.</p> : activeNotifications.slice(0, 6).map((item) => (
+                                        <button key={item.key} type="button" onClick={() => openNotification(item)} className="flex w-full items-start gap-2 rounded-md p-2 text-left hover:bg-[#edf7ef]">
+                                            <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[item.priority] || '#64748b' }} />
+                                            <span className="min-w-0"><span className="block text-xs font-semibold">{item.title}</span><span className="block truncate text-xs text-muted-foreground">{item.plate !== '—' ? item.plate : item.driver} · {item.reason}</span></span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="border-t border-border p-3"><Button type="button" className="w-full gap-2 bg-[#1f7a46] hover:bg-[#15532e]" onClick={() => { setTab('pendencias'); setNotificationPopoverOpen(false); }}><ListFilter className="h-4 w-4" />Ver todas as pendências</Button></div>
+                            </PopoverContent>
+                        </Popover>
                         <Button variant="outline" size="sm" onClick={refresh} disabled={loading} className="gap-2 border-[#b7d5c0] text-[#1f6b3d] hover:bg-[#edf7ef] hover:text-[#15532e]">
                             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
                             Atualizar
@@ -770,12 +827,14 @@ export default function HomePage() {
                                     >
                                         <Icon className="h-4 w-4" />
                                         {t.label}
+                                        {t.id === 'pendencias' && <span className={cn('rounded-full px-1.5 text-[10px] leading-5', activeNotifications.length ? 'bg-red-600 text-white' : 'bg-[#d7e7dc] text-[#1f6b3d]')}>{activeNotifications.length}</span>}
                                     </button>
                                 );
                             })}
                         </div>
 
                         {/* Tab content */}
+                        {tab === 'pendencias' && <PendenciasView records={notificationRecords} activeCount={activeNotifications.length} onOpen={openNotification} />}
                         {tab === 'abastecimento' && <AbastecimentoView data={data} filters={filters} search={search} />}
                         {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
                         {tab === 'documentacao' && <DocumentacaoView data={data} filters={filters} search={search} />}
@@ -851,6 +910,154 @@ function matchesVehicleStatus(placa, statusVeiculo, activeKeys) {
     if (!statusVeiculo || statusVeiculo === 'all') return true;
     const active = activeKeys.has(vehicleKey(placa));
     return statusVeiculo === 'ativos' ? active : !active;
+}
+
+const NOTIFICATION_HISTORY_KEY = 'agromig.frota.pendencias.v1';
+const PRIORITY_RANK = { 'Atenção': 1, Prioridade: 2, Urgente: 3, Crítica: 4 };
+const PRIORITY_COLORS = { 'Atenção': '#ca8a04', Prioridade: '#ea580c', Urgente: '#f97316', 'Crítica': '#dc2626' };
+
+function notificationDate(value) {
+    const date = String(value || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+}
+
+function documentPriority(row) {
+    const status = normalizedStatus(row?.status);
+    const days = Number.isFinite(Number(row?.diasRestantes)) ? Number(row.diasRestantes) : null;
+    if (status === 'ATRASADA' || (days !== null && days < 0)) return 'Crítica';
+    if (days !== null && days <= 7) return 'Urgente';
+    if (days !== null && days <= 15) return 'Prioridade';
+    return 'Atenção';
+}
+
+function documentReason(row) {
+    const status = String(row?.status || '').trim();
+    if (status === 'Atrasada') return row.mensagem || 'Documento vencido.';
+    if (status === 'A vencer') return row.mensagem || `Documento próximo do vencimento (${NUM(row.diasRestantes)} dias restantes).`;
+    return row.mensagem || 'Documento obrigatório não cadastrado ou sem validade informada.';
+}
+
+function isDocumentApplicable(vehicle, document) {
+    const doc = searchKey(document);
+    const vehicleText = searchKey(`${vehicle?.veiculo || ''} ${vehicle?.placa || ''}`);
+    const isMachine = /retroescavadeira|escavadeira|trator|rocadeira|embarcacao/.test(vehicleText);
+    if (isMachine && doc.includes('crlv')) return false;
+    if (vehicle?.placa === '1PY3036ECRM015714' && (doc.includes('opacidade') || doc.includes('eletromecanico'))) return false;
+    if (doc.includes('opacidade') && vehicle?.combustivel && !searchKey(vehicle.combustivel).includes('diesel')) return false;
+    if (doc.includes('contrato') && ['GOR1I41', 'GMH3A70'].includes(vehicleKey(vehicle?.placa))) return false;
+    return true;
+}
+
+function buildFleetNotifications(data) {
+    if (!data) return [];
+    const notifications = [];
+    const vehicleByPlate = new Map((data.veiculos || []).map((vehicle) => [vehicleKey(vehicle.placa), vehicle]));
+
+    (data.abastecimento || []).forEach((row, index) => {
+        const status = normalizedStatus(row.status);
+        // Registros sem status são históricos normais na planilha. Somente o
+        // marcador explícito de revisão/inconformidade gera uma pendência.
+        if (!status || status === 'OK') return;
+        const reason = !Number.isFinite(Number(row.km))
+            ? 'KM não informado.'
+            : !Number.isFinite(Number(row.litros))
+                ? 'Litragem não informada.'
+                : row.kmEstimado
+                    ? 'KM estimado pela média de lançamentos.'
+                    : 'Lançamento marcado como REVISAR na planilha.';
+        notifications.push({
+            key: `abastecimento:${notificationDate(row.data)}:${vehicleKey(row.placa)}:${index}`,
+            category: 'abastecimento',
+            title: 'Abastecimento — Lançamento incorreto',
+            plate: row.placa || '—',
+            vehicle: row.veiculo || vehicleByPlate.get(vehicleKey(row.placa))?.veiculo || '—',
+            driver: row.fa || '',
+            date: notificationDate(row.data),
+            reason,
+            detail: `${row.item || 'Combustível'} · ${row.litros != null ? NUM(row.litros, 2) + ' L' : 'sem litragem'}${row.projeto ? ` · ${row.projeto}` : ''}`,
+            priority: 'Crítica',
+            status: 'Pendente',
+            actionLabel: 'Ver lançamento',
+        });
+    });
+
+    // A aba de documentação também contém linhas técnicas vazias e erros de
+    // fórmula. Elas não representam um documento obrigatório identificável e
+    // não devem gerar alerta duplicado ou falso positivo.
+    const documentMap = new Map();
+    (data.documentacao || []).forEach((row) => {
+        const document = String(row.documento || '').trim();
+        const plate = String(row.placa || '').trim();
+        const status = String(row.status || '').trim();
+        if (!document || document === '#REF!' || !plate || plate === '#REF!' || status === 'OK') return;
+        const vehicle = vehicleByPlate.get(vehicleKey(plate));
+        if (!isDocumentApplicable(vehicle, document)) return;
+        const key = `documentacao:${vehicleKey(plate)}:${searchKey(document)}`;
+        const item = {
+            key,
+            category: 'documentacao',
+            title: status === 'Atrasada' ? 'Documentação — Documento vencido' : status === 'A vencer' ? 'Documentação — Vencimento próximo' : 'Documentação — Documento obrigatório ausente',
+            plate,
+            vehicle: row.veiculo || vehicle?.veiculo || '—',
+            driver: '',
+            date: notificationDate(row.vencimento),
+            dueDate: notificationDate(row.vencimento),
+            document,
+            reason: documentReason(row),
+            detail: row.vencimento ? `Vencimento: ${formatDate(row.vencimento)}${row.diasRestantes != null ? ` · ${NUM(row.diasRestantes)} dias restantes` : ''}` : 'Sem data de validade informada.',
+            priority: documentPriority(row),
+            status: 'Pendente',
+            actionLabel: 'Ver documentação',
+        };
+        const previous = documentMap.get(key);
+        if (!previous || PRIORITY_RANK[item.priority] > PRIORITY_RANK[previous.priority]) documentMap.set(key, item);
+    });
+    notifications.push(...documentMap.values());
+
+    if (data.checklistLoaded && !data.checklistLoading && !data.checklistError) {
+        const checklistRows = (data.checklist || []).map((row) => ({ row, date: notificationDate(row.created_at || row.uploaded_at) })).filter((entry) => entry.date);
+        const period = checklistRows.map((entry) => entry.date).sort().at(-1) || '';
+        if (period) {
+            const periodRows = checklistRows.filter((entry) => entry.date === period).map((entry) => entry.row);
+            const registeredNames = (data.motoristas || [])
+                .map((row) => row.nome || row.motorista || row.name)
+                .map((value) => String(value || '').trim())
+                .filter(Boolean);
+            const { missingDrivers } = summarizeChecklistDrivers(registeredNames, periodRows.map(checklistDriver));
+            missingDrivers.forEach((driver) => {
+                notifications.push({
+                    key: `checklist:${period}:${driverNameKey(driver)}`,
+                    category: 'checklist',
+                    title: 'Checklist — Não realizado',
+                    plate: '—',
+                    vehicle: '—',
+                    driver,
+                    date: period,
+                    period,
+                    reason: 'Checklist obrigatório não realizado no período mais recente registrado.',
+                    detail: `Período acompanhado: ${formatDate(period)}`,
+                    priority: 'Urgente',
+                    status: 'Pendente',
+                    actionLabel: 'Ver checklist',
+                });
+            });
+        }
+    }
+    return notifications.sort((a, b) => (PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority]) || String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function readNotificationHistory() {
+    if (typeof window === 'undefined') return [];
+    try {
+        const parsed = JSON.parse(window.localStorage.getItem(NOTIFICATION_HISTORY_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+}
+
+function mergeNotificationHistory(active, history) {
+    const map = new Map((history || []).map((item) => [item.key, item]));
+    active.forEach((item) => map.set(item.key, { ...item, status: 'Pendente', resolvedAt: '' }));
+    return [...map.values()].sort((a, b) => (a.status === 'Pendente' ? -1 : 1) || String(b.date || '').localeCompare(String(a.date || '')));
 }
 
 function AbastecimentoView({ data, filters, search }) {
@@ -1711,6 +1918,81 @@ function ChecklistView({ data, filters, search }) {
                     })}
                 </ScrollTable>
             )}
+        </section>
+    );
+}
+
+function PendenciasView({ records, activeCount, onOpen }) {
+    const [categoryFilter, setCategoryFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('Pendente');
+    const [priorityFilter, setPriorityFilter] = useState('all');
+    const [vehicleFilter, setVehicleFilter] = useState('');
+    const [driverFilter, setDriverFilter] = useState('');
+    const [dateFilter, setDateFilter] = useState('');
+
+    const activeRecords = useMemo(() => records.filter((item) => item.status === 'Pendente'), [records]);
+    const counts = useMemo(() => Object.fromEntries(Object.keys(PRIORITY_RANK).map((priority) => [priority, activeRecords.filter((item) => item.priority === priority).length])), [activeRecords]);
+    const filtered = useMemo(() => records.filter((item) => {
+        if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
+        if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+        if (priorityFilter !== 'all' && item.priority !== priorityFilter) return false;
+        if (dateFilter && item.date !== dateFilter && item.dueDate !== dateFilter) return false;
+        const vehicle = searchKey(vehicleFilter);
+        const driver = searchKey(driverFilter);
+        if (vehicle && !searchKey(`${item.plate} ${item.vehicle}`).includes(vehicle)) return false;
+        if (driver && !searchKey(item.driver).includes(driver)) return false;
+        return true;
+    }), [records, categoryFilter, statusFilter, priorityFilter, vehicleFilter, driverFilter, dateFilter]);
+
+    const clear = () => {
+        setCategoryFilter('all'); setStatusFilter('Pendente'); setPriorityFilter('all');
+        setVehicleFilter(''); setDriverFilter(''); setDateFilter('');
+    };
+
+    return (
+        <section className="flex flex-col gap-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h3 className="text-lg font-semibold">Pendências da Frota</h3>
+                    <p className="text-sm text-muted-foreground">Abastecimento inconforme, documentação obrigatória e checklist do período mais recente.</p>
+                </div>
+                <Badge className={activeCount ? 'bg-red-600 px-3 py-1 hover:bg-red-600' : 'bg-[#1f7a46] px-3 py-1 hover:bg-[#1f7a46]'}>{activeCount} ativa(s)</Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {Object.keys(PRIORITY_RANK).map((priority) => (
+                    <KpiCard key={priority} label={priority} value={NUM(counts[priority] || 0)} accent={priority === 'Crítica' ? 'text-red-600' : priority === 'Urgente' ? 'text-orange-600' : priority === 'Prioridade' ? 'text-orange-700' : 'text-amber-600'} active={priorityFilter === priority} onClick={() => setPriorityFilter((value) => value === priority ? 'all' : priority)} />
+                ))}
+            </div>
+            <Card className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><ListFilter className="h-4 w-4 text-[#1f7a46]" />Filtros de pendências</div>
+                <div className="flex flex-wrap items-end gap-3">
+                    <FilterSelect label="Categoria" value={categoryFilter} onChange={setCategoryFilter} options={['abastecimento', 'documentacao', 'checklist']} format={(value) => ({ abastecimento: 'Abastecimento', documentacao: 'Documentação', checklist: 'Checklist' }[value])} />
+                    <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={['Pendente', 'Resolvida']} />
+                    <FilterSelect label="Prioridade" value={priorityFilter} onChange={setPriorityFilter} options={Object.keys(PRIORITY_RANK)} />
+                    <div className="flex flex-col gap-1"><label className="text-xs font-medium text-muted-foreground">Veículo / placa</label><Input value={vehicleFilter} onChange={(event) => setVehicleFilter(event.target.value)} placeholder="Placa ou modelo" className="w-44" /></div>
+                    <div className="flex flex-col gap-1"><label className="text-xs font-medium text-muted-foreground">Motorista</label><Input value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)} placeholder="Nome do motorista" className="w-44" /></div>
+                    <div className="flex flex-col gap-1"><label className="text-xs font-medium text-muted-foreground">Data</label><Input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} className="w-40" /></div>
+                    {(categoryFilter !== 'all' || statusFilter !== 'Pendente' || priorityFilter !== 'all' || vehicleFilter || driverFilter || dateFilter) && <Button variant="ghost" size="sm" onClick={clear} className="gap-1.5"><X className="h-4 w-4" />Limpar</Button>}
+                </div>
+            </Card>
+            <div className="flex items-center justify-between gap-3"><h4 className="text-sm font-semibold">Lista de pendências</h4><span className="text-xs text-muted-foreground">{filtered.length} registro(s)</span></div>
+            {filtered.length === 0 ? <EmptyHint>{statusFilter === 'Resolvida' ? 'Nenhuma pendência resolvida registrada neste navegador.' : 'Nenhuma pendência encontrada para os filtros selecionados.'}</EmptyHint> : (
+                <ScrollTable head={<>{['Categoria', 'Prioridade', 'Pendência', 'Veículo / placa', 'Motorista', 'Data', 'Status', 'Ação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                    {filtered.slice(0, 500).map((item) => (
+                        <TableRow key={item.key}>
+                            <TableCell><Badge variant="outline" className="text-xs">{item.category === 'abastecimento' ? 'Abastecimento' : item.category === 'documentacao' ? 'Documentação' : 'Checklist'}</Badge></TableCell>
+                            <TableCell><span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: PRIORITY_COLORS[item.priority] || '#64748b' }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[item.priority] || '#64748b' }} />{item.priority}</span></TableCell>
+                            <TableCell className="max-w-[270px] text-xs"><span className="block font-semibold">{item.title}</span><span className="block truncate text-muted-foreground" title={item.reason}>{item.reason}</span><span className="block truncate text-muted-foreground">{item.detail}</span></TableCell>
+                            <TableCell className="text-xs"><span className="font-mono">{item.plate}</span><br />{item.vehicle}</TableCell>
+                            <TableCell className="text-xs">{item.driver || '—'}</TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">{item.date ? formatDate(item.date) : '—'}{item.dueDate && item.dueDate !== item.date ? <><br /><span className="text-muted-foreground">vence {formatDate(item.dueDate)}</span></> : null}</TableCell>
+                            <TableCell><Badge variant={item.status === 'Resolvida' ? 'secondary' : 'outline'} className={item.status === 'Resolvida' ? 'text-green-700' : 'border-orange-300 text-orange-700'}>{item.status}</Badge></TableCell>
+                            <TableCell><Button variant="outline" size="sm" className="gap-1.5 whitespace-nowrap" onClick={() => onOpen(item)}><ExternalLink className="h-3.5 w-3.5" />{item.actionLabel}</Button></TableCell>
+                        </TableRow>
+                    ))}
+                </ScrollTable>
+            )}
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />Pendências corrigidas deixam de contar no sino automaticamente e permanecem no histórico local deste navegador.</div>
         </section>
     );
 }
