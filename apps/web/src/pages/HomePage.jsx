@@ -545,7 +545,13 @@ export default function HomePage() {
     };
 
     const openNotification = (item) => {
-        const nextTab = item.category === 'abastecimento' ? 'abastecimento' : item.category === 'documentacao' ? 'documentacao' : 'checklist';
+        const nextTab = item.category === 'abastecimento'
+            ? 'abastecimento'
+            : item.category === 'documentacao'
+                ? 'documentacao'
+                : item.category === 'manutencao'
+                    ? 'manutencao'
+                    : 'checklist';
         setTab(nextTab);
         setSearch(item.driver || (item.plate !== '—' ? item.plate : ''));
         if (item.plate && item.plate !== '—') setF('placa', item.plate);
@@ -948,6 +954,147 @@ function isDocumentApplicable(vehicle, document) {
     return true;
 }
 
+const PREVENTIVE_MAINTENANCE_RE = /preventiv|preventiva|revis[aã]o programada|revis[aã]o preventiva/i;
+const MACHINE_MAINTENANCE_RE = /retroescavadeira|escavadeira|trator|rocadeira|embarca[cç][aã]o/i;
+
+function numericValue(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const raw = String(value ?? '').trim().replace(/\s/g, '');
+    if (!raw) return null;
+    const normalized = raw.includes(',') && raw.includes('.')
+        ? raw.replace(/\./g, '').replace(',', '.')
+        : raw.includes(',')
+            ? raw.replace(',', '.')
+            : /^-?\d{1,3}(?:\.\d{3})+$/.test(raw) ? raw.replace(/\./g, '') : raw;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function maintenanceUnit(vehicle, row = {}) {
+    const raw = searchKey(row.unidade || vehicle?.unidade || '');
+    if (/hora|horas|\bh\b/.test(raw)) return 'H';
+    return 'KM';
+}
+
+function maintenanceIsPreventive(row) {
+    return PREVENTIVE_MAINTENANCE_RE.test(`${row?.tipo || ''} ${row?.categoria || ''} ${row?.descricao || ''}`);
+}
+
+function maintenanceMachine(text) {
+    return MACHINE_MAINTENANCE_RE.test(String(text || ''));
+}
+
+function numericField(source, names) {
+    for (const name of names) {
+        const value = numericValue(source?.[name]);
+        if (value !== null) return value;
+    }
+    return null;
+}
+
+function maintenanceLimitFromText(row, unit) {
+    const text = String(`${row?.descricao || ''} ${row?.peca || ''}`).trim();
+    if (!text) return null;
+    const numberPattern = '(\\d[\\d.,]*)';
+    const unitPattern = unit === 'H' ? '(?:h|hora|horas)' : '(?:km|quilometragem|quilometragem)';
+    const direct = text.match(new RegExp(`${numberPattern}\\s*${unitPattern}\\b`, 'i'));
+    if (direct) return numericValue(direct[1]);
+    // Descrições como “revisão de 1000H” podem deixar a unidade fora do
+    // padrão esperado. O veículo já define se a leitura é KM ou H.
+    if (/revis[aã]o|manuten[cç][aã]o/i.test(text)) {
+        const revision = text.match(new RegExp(`(?:revis[aã]o|manuten[cç][aã]o)[^\\d]{0,18}${numberPattern}`, 'i'));
+        if (revision) return numericValue(revision[1]);
+    }
+    return null;
+}
+
+function maintenanceMatchesVehicle(row, vehicle) {
+    const rowPlate = vehicleKey(row?.placa);
+    const plate = vehicleKey(vehicle?.placa);
+    if (rowPlate && plate && rowPlate === plate) return true;
+    const rowText = searchKey(`${row?.placa || ''} ${row?.veiculo || ''}`);
+    const vehicleText = searchKey(`${vehicle?.placa || ''} ${vehicle?.veiculo || ''}`);
+    // Alguns registros antigos usam “RETROESCAVADEIRA JCB3CX AGR 102” no
+    // lugar do identificador alfanumérico. O código AGR é uma chave estável.
+    const rowAgr = rowText.match(/agr\s*\d{2,3}/)?.[0]?.replace(/\s/g, '');
+    const vehicleAgr = vehicleText.match(/agr\s*\d{2,3}/)?.[0]?.replace(/\s/g, '');
+    return Boolean(rowAgr && vehicleAgr && rowAgr === vehicleAgr);
+}
+
+function latestPreventiveByVehicle(data, vehicle) {
+    const rows = (data?.manutencao || [])
+        .filter((row) => maintenanceIsPreventive(row) && maintenanceMatchesVehicle(row, vehicle))
+        .filter((row) => numericValue(row.leitura) !== null)
+        .sort((a, b) => String(b.dataChamado || '').localeCompare(String(a.dataChamado || '')) || (Number(b.id) || 0) - (Number(a.id) || 0));
+    return rows[0] || null;
+}
+
+function currentReadingForVehicle(data, vehicle) {
+    const key = vehicleKey(vehicle?.placa);
+    const utilization = (data?.utilizacao || []).find((row) => vehicleKey(row.placa) === key);
+    const utilizationReading = numericField(utilization, ['leituraAtual', 'kmAtual', 'horasAtual', 'leitura']);
+    if (utilizationReading !== null) return utilizationReading;
+    const weekly = (data?.kmRodado || []).find((row) => vehicleKey(row.placa) === key);
+    const readings = Array.isArray(weekly?.leituras) ? weekly.leituras.map(numericValue).filter((value) => value !== null) : [];
+    return readings.length ? readings[readings.length - 1] : numericField(weekly, ['leituraAtual', 'kmAtual', 'horasAtual']);
+}
+
+function preventiveMaintenanceStatus(delta, unit) {
+    if (delta <= 0) return { priority: 'Crítica', classification: 'VENCIDA / PRIORIDADE MÁXIMA', message: 'MANUTENÇÃO VENCIDA — MARCAR A MANUTENÇÃO O MAIS RÁPIDO POSSÍVEL.' };
+    if ((unit === 'KM' && delta <= 250) || (unit === 'H' && delta <= 25)) {
+        return { priority: 'Urgente', classification: 'URGENTE — AGENDAR MANUTENÇÃO', message: 'URGENTE: AGENDAR MANUTENÇÃO — Veículo/equipamento próximo do limite da manutenção preventiva.' };
+    }
+    if ((unit === 'KM' && delta <= 1000) || (unit === 'H' && delta <= 50)) {
+        return { priority: 'Atenção', classification: 'AVISO — AGENDAR MANUTENÇÃO', message: 'AGENDAR MANUTENÇÃO — Manutenção preventiva se aproximando do limite.' };
+    }
+    return null;
+}
+
+function buildPreventiveMaintenanceNotifications(data, vehicleByPlate) {
+    const notifications = [];
+    (data?.veiculos || []).forEach((vehicle) => {
+        const latest = latestPreventiveByVehicle(data, vehicle);
+        if (!latest) return;
+        const unit = maintenanceUnit(vehicle, latest);
+        const current = currentReadingForVehicle(data, vehicle);
+        if (current === null) return;
+        const reading = numericValue(latest.leitura);
+        if (reading === null) return;
+
+        const absoluteLimit = numericField(latest, ['limiteManutencao', 'limitePreventiva', 'limite', 'kmLimite', 'kmLimiteManutencao', 'horasLimite', 'limiteHoras'])
+            ?? numericField(vehicle, ['limiteManutencao', 'limitePreventiva', 'limite', 'kmLimite', 'kmLimiteManutencao', 'horasLimite', 'limiteHoras'])
+            ?? maintenanceLimitFromText(latest, unit);
+        const interval = numericField(latest, ['intervaloManutencao', 'intervaloPreventiva', 'intervalo', 'intervaloKm', 'intervaloHoras'])
+            ?? numericField(vehicle, ['intervaloManutencao', 'intervaloPreventiva', 'intervalo', 'intervaloKm', 'intervaloHoras']);
+        // A regra operacional já adotada para máquinas é uma revisão a cada
+        // 250 H. Para veículos rodoviários, não se presume um intervalo que
+        // não esteja cadastrado na base.
+        const fallbackInterval = unit === 'H' && maintenanceMachine(`${vehicle.veiculo} ${vehicle.placa}`) ? 250 : null;
+        const limit = absoluteLimit !== null ? absoluteLimit : interval !== null ? reading + interval : fallbackInterval !== null ? reading + fallbackInterval : null;
+        if (limit === null) return;
+        const delta = limit - current;
+        const status = preventiveMaintenanceStatus(delta, unit);
+        if (!status) return;
+        const plate = vehicle.placa || latest.placa || '—';
+        const difference = delta >= 0 ? `Faltam ${NUM(delta, 1)} ${unit}` : `Ultrapassou ${NUM(Math.abs(delta), 1)} ${unit}`;
+        notifications.push({
+            key: `manutencao:${vehicleKey(plate)}:${latest.id || latest.dataChamado || 'preventiva'}`,
+            category: 'manutencao',
+            title: `Manutenção preventiva — ${status.classification}`,
+            plate,
+            vehicle: vehicle.veiculo || latest.veiculo || '—',
+            driver: '',
+            date: notificationDate(latest.dataPrevista || latest.dataChamado),
+            reason: status.message,
+            detail: `Limite: ${NUM(limit, 1)} ${unit} · Atual: ${NUM(current, 1)} ${unit} · ${difference}`,
+            priority: status.priority,
+            status: 'Pendente',
+            actionLabel: 'Ver manutenção',
+        });
+    });
+    return notifications;
+}
+
 function buildFleetNotifications(data) {
     if (!data) return [];
     const notifications = [];
@@ -1013,6 +1160,7 @@ function buildFleetNotifications(data) {
         if (!previous || PRIORITY_RANK[item.priority] > PRIORITY_RANK[previous.priority]) documentMap.set(key, item);
     });
     notifications.push(...documentMap.values());
+    notifications.push(...buildPreventiveMaintenanceNotifications(data, vehicleByPlate));
 
     if (data.checklistLoaded && !data.checklistLoading && !data.checklistError) {
         const checklistRows = (data.checklist || []).map((row) => ({ row, date: notificationDate(row.created_at || row.uploaded_at) })).filter((entry) => entry.date);
@@ -1954,7 +2102,7 @@ function PendenciasView({ records, activeCount, onOpen }) {
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h3 className="text-lg font-semibold">Pendências da Frota</h3>
-                    <p className="text-sm text-muted-foreground">Abastecimento inconforme, documentação obrigatória e checklist do período mais recente.</p>
+                    <p className="text-sm text-muted-foreground">Abastecimento inconforme, manutenção preventiva próxima do limite, documentação obrigatória e checklist do período mais recente.</p>
                 </div>
                 <Badge className={activeCount ? 'bg-red-600 px-3 py-1 hover:bg-red-600' : 'bg-[#1f7a46] px-3 py-1 hover:bg-[#1f7a46]'}>{activeCount} ativa(s)</Badge>
             </div>
@@ -1966,7 +2114,7 @@ function PendenciasView({ records, activeCount, onOpen }) {
             <Card className="p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><ListFilter className="h-4 w-4 text-[#1f7a46]" />Filtros de pendências</div>
                 <div className="flex flex-wrap items-end gap-3">
-                    <FilterSelect label="Categoria" value={categoryFilter} onChange={setCategoryFilter} options={['abastecimento', 'documentacao', 'checklist']} format={(value) => ({ abastecimento: 'Abastecimento', documentacao: 'Documentação', checklist: 'Checklist' }[value])} />
+                    <FilterSelect label="Categoria" value={categoryFilter} onChange={setCategoryFilter} options={['abastecimento', 'documentacao', 'manutencao', 'checklist']} format={(value) => ({ abastecimento: 'Abastecimento', documentacao: 'Documentação', manutencao: 'Manutenção', checklist: 'Checklist' }[value])} />
                     <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={['Pendente', 'Resolvida']} />
                     <FilterSelect label="Prioridade" value={priorityFilter} onChange={setPriorityFilter} options={Object.keys(PRIORITY_RANK)} />
                     <div className="flex flex-col gap-1"><label className="text-xs font-medium text-muted-foreground">Veículo / placa</label><Input value={vehicleFilter} onChange={(event) => setVehicleFilter(event.target.value)} placeholder="Placa ou modelo" className="w-44" /></div>
@@ -1980,7 +2128,7 @@ function PendenciasView({ records, activeCount, onOpen }) {
                 <ScrollTable head={<>{['Categoria', 'Prioridade', 'Pendência', 'Veículo / placa', 'Motorista', 'Data', 'Status', 'Ação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
                     {filtered.slice(0, 500).map((item) => (
                         <TableRow key={item.key}>
-                            <TableCell><Badge variant="outline" className="text-xs">{item.category === 'abastecimento' ? 'Abastecimento' : item.category === 'documentacao' ? 'Documentação' : 'Checklist'}</Badge></TableCell>
+                            <TableCell><Badge variant="outline" className="text-xs">{item.category === 'abastecimento' ? 'Abastecimento' : item.category === 'documentacao' ? 'Documentação' : item.category === 'manutencao' ? 'Manutenção' : 'Checklist'}</Badge></TableCell>
                             <TableCell><span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: PRIORITY_COLORS[item.priority] || '#64748b' }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[item.priority] || '#64748b' }} />{item.priority}</span></TableCell>
                             <TableCell className="max-w-[270px] text-xs"><span className="block font-semibold">{item.title}</span><span className="block truncate text-muted-foreground" title={item.reason}>{item.reason}</span><span className="block truncate text-muted-foreground">{item.detail}</span></TableCell>
                             <TableCell className="text-xs"><span className="font-mono">{item.plate}</span><br />{item.vehicle}</TableCell>
