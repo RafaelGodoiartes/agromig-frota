@@ -1050,7 +1050,7 @@ function preventiveMaintenanceStatus(delta, unit) {
     return null;
 }
 
-function buildPreventiveMaintenanceNotifications(data, vehicleByPlate) {
+function buildPreventiveMaintenanceNotifications(data) {
     const notifications = [];
     (data?.veiculos || []).forEach((vehicle) => {
         const latest = latestPreventiveByVehicle(data, vehicle);
@@ -1160,7 +1160,7 @@ function buildFleetNotifications(data) {
         if (!previous || PRIORITY_RANK[item.priority] > PRIORITY_RANK[previous.priority]) documentMap.set(key, item);
     });
     notifications.push(...documentMap.values());
-    notifications.push(...buildPreventiveMaintenanceNotifications(data, vehicleByPlate));
+    notifications.push(...buildPreventiveMaintenanceNotifications(data));
 
     if (data.checklistLoaded && !data.checklistLoading && !data.checklistError) {
         const checklistRows = (data.checklist || []).map((row) => ({ row, date: notificationDate(row.created_at || row.uploaded_at) })).filter((entry) => entry.date);
