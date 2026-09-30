@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet';
 import {
     Fuel, Wrench, FileCheck, Gauge, RefreshCw, AlertTriangle,
     Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus, ClipboardCheck,
-    Bell, CheckCircle2, Clock3, ListFilter,
+    Bell, CheckCircle2, Clock3, ListFilter, PackageOpen,
 } from 'lucide-react';
 import {
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -93,6 +93,7 @@ const TABS = [
     { id: 'documentacao', label: 'Documentação', icon: FileCheck },
     { id: 'km', label: 'KM Rodado', icon: Gauge },
     { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
+    { id: 'compras-pecas', label: 'Compras de Peças', icon: PackageOpen },
 ];
 
 // --- small presentational helpers -----------------------------------------
@@ -455,6 +456,61 @@ function VeiculoDialog({ data, onSaved }) {
     );
 }
 
+function CompraPecaDialog({ data, onSaved }) {
+    const [open, setOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState('');
+    const [form, setForm] = useState({ peca: '', tipo: '', fornecedor: '', valor: '', placa: '__estoque__', dataEntrada: today(), dataSaida: '' });
+    const vehicles = useMemo(() => {
+        const map = new Map();
+        [...(data?.veiculos || []), ...(data?.veiculosAbastecimento || [])].forEach((vehicle) => {
+            const plate = String(vehicle?.placa || '').trim().toUpperCase();
+            if (plate && !map.has(plate)) map.set(plate, { ...vehicle, placa: plate });
+        });
+        return [...map.values()].sort((a, b) => a.placa.localeCompare(b.placa, 'pt-BR'));
+    }, [data]);
+    const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+    const submit = async (event) => {
+        event.preventDefault(); setSaving(true); setMessage('');
+        if (form.dataSaida && form.dataSaida < form.dataEntrada) {
+            setMessage('A data de saída não pode ser anterior à data de entrada.');
+            setSaving(false);
+            return;
+        }
+        try {
+            const response = await apiServerClient.fetch('/fleet/compra-peca', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...form, placa: form.placa === '__estoque__' ? '' : form.placa }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.message || 'Não foi possível salvar a compra de peça.');
+            setMessage(body.message || 'Compra de peça gravada na planilha.');
+            setForm({ peca: '', tipo: '', fornecedor: '', valor: '', placa: '__estoque__', dataEntrada: today(), dataSaida: '' });
+            setTimeout(() => setOpen(false), 900);
+            try { await onSaved?.(); } catch (refreshError) { console.warn('Compra salva, mas o painel não atualizou imediatamente.', refreshError); }
+        } catch (error) { setMessage(error.message); } finally { setSaving(false); }
+    };
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild><Button variant="outline" className="gap-2"><PackageOpen className="h-4 w-4" />Nova compra de peça</Button></DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                <DialogHeader><DialogTitle>Registrar compra de peça</DialogTitle><DialogDescription>O lançamento será gravado automaticamente na aba “Compras de Peças”.</DialogDescription></DialogHeader>
+                <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Peça / descrição"><Input value={form.peca} onChange={(e) => set('peca', e.target.value)} required autoFocus /></Field>
+                    <Field label="Tipo / categoria"><Input value={form.tipo} onChange={(e) => set('tipo', e.target.value)} placeholder="Filtro, óleo, graxa…" required /></Field>
+                    <Field label="Fornecedor"><Input value={form.fornecedor} onChange={(e) => set('fornecedor', e.target.value)} required /></Field>
+                    <Field label="Valor (R$)"><Input inputMode="decimal" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Ex.: 250,00" required /></Field>
+                    <Field label="Veículo / placa"><Select value={form.placa} onValueChange={(value) => set('placa', value)}><SelectTrigger><SelectValue placeholder="Em estoque" /></SelectTrigger><SelectContent><SelectItem value="__estoque__">Em estoque / não vinculado</SelectItem>{vehicles.map((vehicle) => <SelectItem key={vehicle.placa} value={vehicle.placa}>{vehicle.placa} · {vehicle.veiculo}</SelectItem>)}</SelectContent></Select></Field>
+                    <Field label="Data de entrada"><Input type="date" value={form.dataEntrada} onChange={(e) => set('dataEntrada', e.target.value)} required /></Field>
+                    <Field label="Data de saída / utilização"><Input type="date" value={form.dataSaida} min={form.dataEntrada || undefined} onChange={(e) => set('dataSaida', e.target.value)} /><span className="text-xs text-muted-foreground">Deixe em branco enquanto a peça estiver em estoque.</span></Field>
+                    <div className="sm:col-span-2 flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{message}</p><Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar compra</Button></div>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function KmSemanalDialog({ data, onSaved }) {
     const [open, setOpen] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -721,6 +777,7 @@ export default function HomePage() {
                     <div className="flex flex-wrap gap-2">
                         <LancamentoDialog type="abastecimento" data={data} onSaved={refresh} />
                         <LancamentoDialog type="manutencao" data={data} onSaved={refresh} />
+                        <CompraPecaDialog data={data} onSaved={refresh} />
                         <KmSemanalDialog data={data} onSaved={refresh} />
                         <VeiculoDialog data={data} onSaved={refresh} />
                     </div>
@@ -846,6 +903,7 @@ export default function HomePage() {
                         {tab === 'documentacao' && <DocumentacaoView data={data} filters={filters} search={search} />}
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
                         {tab === 'checklist' && <ChecklistView data={data} filters={filters} search={search} />}
+                        {tab === 'compras-pecas' && <ComprasPecasView data={data} filters={filters} search={search} />}
                     </>
                 )}
             </main>
@@ -1467,6 +1525,55 @@ function AbastecimentoView({ data, filters, search }) {
                 )}
                 {visibleRows.length > 200 && <p className="text-xs text-muted-foreground">Exibindo 200 de {visibleRows.length} registros.</p>}
             </div>
+        </section>
+    );
+}
+
+function ComprasPecasView({ data, filters, search }) {
+    const rows = useMemo(() => (data.comprasPecas || []).filter((row) => {
+        const date = String(row.dataEntrada || '').slice(0, 10);
+        if (filters.periodStart && date && date < filters.periodStart) return false;
+        if (filters.periodEnd && date && date > filters.periodEnd) return false;
+        if (filters.placa !== 'all' && row.placa && row.placa !== filters.placa) return false;
+        const query = searchKey(search);
+        return !query || searchKey(`${row.peca} ${row.tipo} ${row.fornecedor} ${row.placa}`).includes(query);
+    }), [data.comprasPecas, filters.periodStart, filters.periodEnd, filters.placa, search]);
+    const total = useMemo(() => rows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0), [rows]);
+    const emEstoque = rows.filter((row) => row.status === 'Em estoque').length;
+    const utilizadas = rows.filter((row) => row.status === 'Utilizada').length;
+
+    return (
+        <section className="flex flex-col gap-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <KpiCard label="Peças lançadas" value={NUM(rows.length)} />
+                <KpiCard label="Em estoque" value={NUM(emEstoque)} accent="text-amber-700" />
+                <KpiCard label="Utilizadas" value={NUM(utilizadas)} accent="text-green-700" />
+                <KpiCard label="Valor total" value={BRL(total)} />
+            </div>
+            <Card className="p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div><h3 className="text-sm font-semibold">Compras de peças</h3><p className="text-xs text-muted-foreground">A data de saída representa a retirada do estoque e utilização da peça.</p></div>
+                    <Badge variant="outline">{rows.length} registro(s)</Badge>
+                </div>
+                <div className="mt-4">
+                    {rows.length === 0 ? <EmptyHint>Nenhuma compra de peça para os filtros selecionados.</EmptyHint> : (
+                        <ScrollTable head={<>{['Peça / descrição', 'Tipo', 'Fornecedor', 'Valor', 'Veículo / placa', 'Entrada', 'Saída / utilização', 'Status'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                            {rows.map((row) => (
+                                <TableRow key={row.id || `${row.peca}-${row.dataEntrada}-${row.placa}`}>
+                                    <TableCell className="font-medium">{row.peca || '—'}</TableCell>
+                                    <TableCell>{row.tipo || '—'}</TableCell>
+                                    <TableCell>{row.fornecedor || '—'}</TableCell>
+                                    <TableCell className="text-right">{BRL(row.valor)}</TableCell>
+                                    <TableCell className="font-mono text-xs">{row.placa || 'Em estoque'}</TableCell>
+                                    <TableCell className="whitespace-nowrap">{row.dataEntrada ? formatDate(row.dataEntrada) : '—'}</TableCell>
+                                    <TableCell className="whitespace-nowrap">{row.dataSaida ? formatDate(row.dataSaida) : '—'}</TableCell>
+                                    <TableCell><Badge variant="outline" className={row.status === 'Utilizada' ? 'border-green-300 text-green-700' : 'border-amber-300 text-amber-700'}>{row.status}</Badge></TableCell>
+                                </TableRow>
+                            ))}
+                        </ScrollTable>
+                    )}
+                </div>
+            </Card>
         </section>
     );
 }

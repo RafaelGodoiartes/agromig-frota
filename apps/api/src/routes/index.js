@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import healthCheck from './health-check.js';
-import fleetHandler, { fleetRefreshHandler, createAbastecimentoHandler, createManutencaoHandler, createKmSemanalHandler, createVeiculoHandler } from './fleet.js';
+import fleetHandler, { fleetRefreshHandler, createAbastecimentoHandler, createManutencaoHandler, createKmSemanalHandler, createVeiculoHandler, createCompraPecaHandler } from './fleet.js';
 
 const router = Router();
 
@@ -12,6 +12,7 @@ export default () => {
     router.post('/fleet/manutencao', createManutencaoHandler);
     router.post('/fleet/km-semanal', createKmSemanalHandler);
     router.post('/fleet/veiculo', createVeiculoHandler);
+    router.post('/fleet/compra-peca', createCompraPecaHandler);
 
     return router;
 };

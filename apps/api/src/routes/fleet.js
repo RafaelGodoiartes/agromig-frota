@@ -331,6 +331,32 @@ const createVeiculoHandler = async (req, res) => {
     }
 };
 
+const createCompraPecaHandler = async (req, res) => {
+    try {
+        if (!(await validateRequest(req, res))) return;
+        const peca = text(req.body.peca);
+        const tipo = text(req.body.tipo);
+        const fornecedor = text(req.body.fornecedor);
+        const dataEntrada = text(req.body.dataEntrada);
+        const dataSaida = text(req.body.dataSaida);
+        if (!peca || !tipo || !fornecedor) throw new Error('Informe peça, tipo e fornecedor.');
+        const valor = requiredNumber(req.body.valor, 'Valor da peça');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dataEntrada)) throw new Error('Data de entrada inválida.');
+        if (dataSaida && !/^\d{4}-\d{2}-\d{2}$/.test(dataSaida)) throw new Error('Data de saída inválida.');
+        if (dataSaida && dataSaida < dataEntrada) throw new Error('A data de saída não pode ser anterior à data de entrada.');
+        await appendSheetRow({
+            spreadsheetId: SHEET2_ID,
+            sheetName: 'Compras de Peças',
+            values: [peca, tipo, fornecedor, valor, text(req.body.placa), dataEntrada, dataSaida],
+        });
+        cache = null;
+        res.status(201).json({ ok: true, message: 'Compra de peça gravada na planilha.' });
+    } catch (err) {
+        logger.error('create compra de peça error:', err.message);
+        res.status(400).json({ error: 'INVALID_ENTRY', message: err.message });
+    }
+};
+
 // force-refresh endpoint (clears cache)
 const fleetRefreshHandler = async (req, res) => {
     cache = null;
@@ -348,4 +374,4 @@ const fleetRefreshHandler = async (req, res) => {
 };
 
 export default fleetHandler;
-export { fleetRefreshHandler, createAbastecimentoHandler, createManutencaoHandler, createKmSemanalHandler, createVeiculoHandler };
+export { fleetRefreshHandler, createAbastecimentoHandler, createManutencaoHandler, createKmSemanalHandler, createVeiculoHandler, createCompraPecaHandler };

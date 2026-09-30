@@ -1,7 +1,7 @@
 // The public dashboard is hosted on GitHub Pages. Its data/write backend is
 // the Google Apps Script Web App so the site no longer depends on Cloudflare.
 export const API_SERVER_URL = import.meta.env.VITE_API_BASE_URL
-    || 'https://script.google.com/macros/s/AKfycbwKBs32W3KZqQO2pqRqXErs0AfmofIdRUAuoUmvVQNg_9ulpC4S_bibFde9L3pUxPjf/exec';
+    || 'https://script.google.com/macros/s/AKfycbwC30lpHYigIiLK7Rz0Z3nP-5teqEXykCOkoZFLqLXgjfblaxj9cLTLJFOGUGD2-PKD/exec';
 
 const SHEET1_ID = '1_mGLa1rqNfuFdHyi3GwN1O0pFHvf9TTZKVwz5VCvjlc';
 const SHEET2_ID = '1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM';
@@ -96,6 +96,20 @@ function commandForRoute(route, input) {
         return {
             action: 'registerPosto', spreadsheetId: SHEET1_ID,
             nome: text(input.nome), cnpj: text(input.cnpj), cidade: text(input.cidade), observacoes: text(input.observacoes),
+        };
+    }
+    if (route === '/fleet/compra-peca') {
+        return {
+            action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Compras de Peças',
+            values: [
+                text(input.peca),
+                text(input.tipo),
+                text(input.fornecedor),
+                num(input.valor),
+                text(input.placa),
+                text(input.dataEntrada),
+                text(input.dataSaida),
+            ],
         };
     }
     if (route === '/fleet/manutencao') {
