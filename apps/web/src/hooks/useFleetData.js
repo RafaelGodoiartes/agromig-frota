@@ -2,6 +2,42 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import apiServerClient from '@/lib/apiServerClient';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
+const VEHICLE_LIMITS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=1477905702&tq=select%20A%2CE%2CI';
+
+function vehicleKey(value) {
+    return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function parseSheetNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const raw = String(value ?? '').trim().replace(/\s/g, '');
+    if (!raw) return null;
+    const normalized = raw.includes(',') && raw.includes('.')
+        ? raw.replace(/\./g, '').replace(',', '.')
+        : raw.includes(',')
+            ? raw.replace(',', '.')
+            : /^-?\d{1,3}(?:\.\d{3})+$/.test(raw) ? raw.replace(/\./g, '') : raw;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function loadVehicleMaintenanceLimits() {
+    const response = await fetch(`${VEHICLE_LIMITS_URL}&t=${Date.now()}`, { headers: { Accept: 'text/plain' } });
+    if (!response.ok) throw new Error(`Cadastro de veículos respondeu ${response.status}`);
+    const body = await response.text();
+    const match = body.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);\s*$/);
+    if (!match) throw new Error('Resposta do cadastro de veículos inválida.');
+    const payload = JSON.parse(match[1]);
+    const limits = new Map();
+    (payload?.table?.rows || []).forEach((row) => {
+        const cells = row?.c || [];
+        const plate = cells[0]?.v || '';
+        const limit = parseSheetNumber(cells[1]?.v ?? cells[1]?.f);
+        const unit = String(cells[2]?.v ?? cells[2]?.f ?? '').trim();
+        if (vehicleKey(plate) && limit !== null) limits.set(vehicleKey(plate), { limiteManutencao: limit, unidade: unit || undefined });
+    });
+    return limits;
+}
 
 async function loadEpicollectChecklist() {
     const controller = new AbortController();
@@ -41,11 +77,24 @@ export function useFleetData() {
                 throw new Error(body.message || `Erro ${res.status} ao buscar dados`);
             }
             const json = await res.json();
+            // O Apps Script antigo ainda pode estar servindo uma versão sem
+            // o campo LIMITE DE MANUTENÇÃO do cadastro. Complementamos os
+            // veículos diretamente pela aba publicada, sem alterar os demais
+            // dados retornados pela integração.
+            let maintenanceLimits = new Map();
+            try { maintenanceLimits = await loadVehicleMaintenanceLimits(); } catch { /* integração complementar opcional */ }
+            const enrichedJson = {
+                ...json,
+                veiculos: (json.veiculos || []).map((vehicle) => {
+                    const extra = maintenanceLimits.get(vehicleKey(vehicle.placa));
+                    return extra ? { ...vehicle, ...extra } : vehicle;
+                }),
+            };
             // O checklist é sincronizado em segundo plano. A planilha e o
             // painel principal nunca ficam bloqueados se o Epicollect5 demorar.
             const checklistRequestId = ++checklistRequestRef.current;
             setData((current) => ({
-                ...json,
+                ...enrichedJson,
                 checklist: current?.checklist ?? [],
                 checklistLoaded: current?.checklistLoaded === true,
                 checklistLoading: true,

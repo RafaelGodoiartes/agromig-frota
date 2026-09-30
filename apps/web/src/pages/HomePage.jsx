@@ -1089,12 +1089,12 @@ function latestPreventiveByVehicle(data, vehicle) {
 
 function currentReadingForVehicle(data, vehicle) {
     const key = vehicleKey(vehicle?.placa);
-    const utilization = (data?.utilizacao || []).find((row) => vehicleKey(row.placa) === key);
-    const utilizationReading = numericField(utilization, ['leituraAtual', 'kmAtual', 'horasAtual', 'leitura']);
-    if (utilizationReading !== null) return utilizationReading;
     const weekly = (data?.kmRodado || []).find((row) => vehicleKey(row.placa) === key);
     const readings = Array.isArray(weekly?.leituras) ? weekly.leituras.map(numericValue).filter((value) => value !== null) : [];
-    return readings.length ? readings[readings.length - 1] : numericField(weekly, ['leituraAtual', 'kmAtual', 'horasAtual']);
+    // `kmMes` representa a distância rodada no mês, não o hodômetro. A
+    // manutenção preventiva precisa do último lançamento semanal absoluto.
+    if (readings.length) return readings[readings.length - 1];
+    return numericField(weekly, ['leituraAtual', 'kmAtual', 'horasAtual']);
 }
 
 function preventiveMaintenanceStatus(delta, unit) {
@@ -1111,13 +1111,15 @@ function preventiveMaintenanceStatus(delta, unit) {
 function buildPreventiveMaintenanceNotifications(data) {
     const notifications = [];
     (data?.veiculos || []).forEach((vehicle) => {
-        const latest = latestPreventiveByVehicle(data, vehicle);
-        if (!latest) return;
+        // O limite cadastrado no veículo é a fonte principal da próxima
+        // manutenção. O histórico preventivo continua sendo usado quando
+        // existir, mas não pode ser obrigatório: veículos recém-cadastrados
+        // ou com histórico lançado como “Outros” também devem ser monitorados.
+        const latest = latestPreventiveByVehicle(data, vehicle) || {};
         const unit = maintenanceUnit(vehicle, latest);
         const current = currentReadingForVehicle(data, vehicle);
         if (current === null) return;
         const reading = numericValue(latest.leitura);
-        if (reading === null) return;
 
         const absoluteLimit = numericField(latest, ['limiteManutencao', 'limitePreventiva', 'limite', 'kmLimite', 'kmLimiteManutencao', 'horasLimite', 'limiteHoras'])
             ?? numericField(vehicle, ['limiteManutencao', 'limitePreventiva', 'limite', 'kmLimite', 'kmLimiteManutencao', 'horasLimite', 'limiteHoras'])
@@ -1128,7 +1130,13 @@ function buildPreventiveMaintenanceNotifications(data) {
         // 250 H. Para veículos rodoviários, não se presume um intervalo que
         // não esteja cadastrado na base.
         const fallbackInterval = unit === 'H' && maintenanceMachine(`${vehicle.veiculo} ${vehicle.placa}`) ? 250 : null;
-        const limit = absoluteLimit !== null ? absoluteLimit : interval !== null ? reading + interval : fallbackInterval !== null ? reading + fallbackInterval : null;
+        const limit = absoluteLimit !== null
+            ? absoluteLimit
+            : interval !== null && reading !== null
+                ? reading + interval
+                : fallbackInterval !== null && reading !== null
+                    ? reading + fallbackInterval
+                    : null;
         if (limit === null) return;
         const delta = limit - current;
         const status = preventiveMaintenanceStatus(delta, unit);
