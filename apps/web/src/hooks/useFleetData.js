@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiServerClient from '@/lib/apiServerClient';
+import { loadFaturamentoSources } from '@/lib/faturamentoSources';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
 const VEHICLE_LIMITS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=1477905702&tq=select%20A%2CE%2CI';
@@ -63,6 +64,7 @@ export function useFleetData() {
     const [error, setError] = useState(null);
     const loadingRef = useRef(false);
     const checklistRequestRef = useRef(0);
+    const financeRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
         if (loadingRef.current) return;
@@ -93,13 +95,29 @@ export function useFleetData() {
             // O checklist é sincronizado em segundo plano. A planilha e o
             // painel principal nunca ficam bloqueados se o Epicollect5 demorar.
             const checklistRequestId = ++checklistRequestRef.current;
+            const financeRequestId = ++financeRequestRef.current;
             setData((current) => ({
                 ...enrichedJson,
+                viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
+                locacoesRetroescavadeira: enrichedJson.locacoesRetroescavadeira ?? current?.locacoesRetroescavadeira,
+                faturamentoLoading: true,
+                faturamentoError: null,
                 checklist: current?.checklist ?? [],
                 checklistLoaded: current?.checklistLoaded === true,
                 checklistLoading: true,
                 checklistError: null,
             }));
+            loadFaturamentoSources(enrichedJson)
+                .then((finance) => setData((current) => (
+                    current && financeRequestRef.current === financeRequestId
+                        ? { ...current, ...finance, faturamentoLoading: false, faturamentoError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && financeRequestRef.current === financeRequestId
+                        ? { ...current, faturamentoLoading: false, faturamentoError: 'Não foi possível atualizar as viagens e locações. Clique em Atualizar para tentar novamente.' }
+                        : current
+                )));
             loadEpicollectChecklist()
                 .then((checklist) => setData((current) => (
                     current && checklistRequestRef.current === checklistRequestId

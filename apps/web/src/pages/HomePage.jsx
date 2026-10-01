@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet';
 import {
     Fuel, Wrench, FileCheck, Gauge, RefreshCw, AlertTriangle,
     Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus, ClipboardCheck,
-    Bell, CheckCircle2, Clock3, ListFilter, PackageOpen,
+    Bell, CheckCircle2, Clock3, ListFilter, PackageOpen, CircleDollarSign,
 } from 'lucide-react';
 import {
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -30,6 +30,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ptBR } from 'date-fns/locale';
 import apiServerClient from '@/lib/apiServerClient';
 import { driverNameKey, summarizeChecklistDrivers } from '@/lib/checklistDrivers';
+import {
+    FATURAMENTO_EQUIPMENT,
+    aggregateByMonth,
+    buildMaintenanceCostRows,
+    buildRevenueRows,
+    summarizeByEquipment,
+} from '@/lib/faturamento';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -94,6 +101,7 @@ const TABS = [
     { id: 'km', label: 'KM Rodado', icon: Gauge },
     { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
     { id: 'compras-pecas', label: 'Compras de Peças', icon: PackageOpen },
+    { id: 'faturamento', label: 'Faturamento', icon: CircleDollarSign },
 ];
 
 // --- small presentational helpers -----------------------------------------
@@ -832,7 +840,7 @@ export default function HomePage() {
                 {data && (
                     <>
                         {/* Filters */}
-                        <Card className="p-4">
+                        {tab !== 'faturamento' && <Card className="p-4">
                             <div className="flex flex-wrap items-end gap-3">
                                 <div className="flex flex-col gap-1">
                                     <label className="text-xs font-medium text-muted-foreground">Período</label>
@@ -870,7 +878,7 @@ export default function HomePage() {
                                     </Button>
                                 )}
                             </div>
-                        </Card>
+                        </Card>}
 
                         {/* Tabs */}
                         <div className="flex flex-wrap gap-1 border-b border-[#d7e7dc] bg-white">
@@ -904,6 +912,7 @@ export default function HomePage() {
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
                         {tab === 'checklist' && <ChecklistView data={data} filters={filters} search={search} />}
                         {tab === 'compras-pecas' && <ComprasPecasView data={data} filters={filters} search={search} />}
+                        {tab === 'faturamento' && <FaturamentoView data={data} />}
                     </>
                 )}
             </main>
@@ -1533,6 +1542,135 @@ function AbastecimentoView({ data, filters, search }) {
                 )}
                 {visibleRows.length > 200 && <p className="text-xs text-muted-foreground">Exibindo 200 de {visibleRows.length} registros.</p>}
             </div>
+        </section>
+    );
+}
+
+function FaturamentoView({ data }) {
+    const [period, setPeriod] = useState({ from: '', to: '' });
+    const [equipment, setEquipment] = useState(FATURAMENTO_EQUIPMENT.ALL);
+    const sourceReady = Array.isArray(data?.viagensLTU5A25) && Array.isArray(data?.locacoesRetroescavadeira);
+    const invalidPeriod = period.from && period.to && period.from > period.to;
+    const revenueRows = useMemo(() => invalidPeriod ? [] : buildRevenueRows(data, { ...period, equipment }), [data, period, equipment, invalidPeriod]);
+    const maintenanceRows = useMemo(() => invalidPeriod ? [] : buildMaintenanceCostRows(data, { ...period, equipment }), [data, period, equipment, invalidPeriod]);
+    const summary = useMemo(() => summarizeByEquipment(revenueRows, maintenanceRows), [revenueRows, maintenanceRows]);
+    const revenueTotal = revenueRows.reduce((sum, row) => sum + row.amount, 0);
+    const maintenanceTotal = maintenanceRows.reduce((sum, row) => sum + row.amount, 0);
+    const result = revenueTotal - maintenanceTotal;
+    const margin = revenueTotal ? (result / revenueTotal) * 100 : null;
+    const revenueByMonth = useMemo(() => aggregateByMonth(revenueRows).map((row) => ({ ...row, label: `${row.month.slice(5)}/${row.month.slice(0, 4)}`, faturamento: row.value })), [revenueRows]);
+    const costsByMonth = useMemo(() => aggregateByMonth(maintenanceRows).map((row) => ({ ...row, label: `${row.month.slice(5)}/${row.month.slice(0, 4)}`, custos: row.value })), [maintenanceRows]);
+    const monthlyComparison = useMemo(() => {
+        const months = new Set([...revenueByMonth, ...costsByMonth].map((row) => row.month));
+        return [...months].sort().map((month) => ({
+            month,
+            label: `${month.slice(5)}/${month.slice(0, 4)}`,
+            faturamento: revenueByMonth.find((row) => row.month === month)?.faturamento || 0,
+            custos: costsByMonth.find((row) => row.month === month)?.custos || 0,
+            resultado: (revenueByMonth.find((row) => row.month === month)?.faturamento || 0) - (costsByMonth.find((row) => row.month === month)?.custos || 0),
+        }));
+    }, [revenueByMonth, costsByMonth]);
+    const equipmentChart = [
+        { name: 'Caminhão Prancha LTU5A25', value: summary.truck.revenue, kind: FATURAMENTO_EQUIPMENT.TRUCK },
+        { name: 'Retroescavadeira', value: summary.retro.revenue, kind: FATURAMENTO_EQUIPMENT.RETRO },
+    ].filter((row) => row.value > 0);
+    const clearPeriod = () => setPeriod({ from: '', to: '' });
+    const setShortcut = (shortcut) => {
+        const now = new Date();
+        const iso = (date) => localIsoDate(date);
+        if (shortcut === 'all') return clearPeriod();
+        if (shortcut === 'month') {
+            setPeriod({ from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)) });
+        } else if (shortcut === 'previous') {
+            setPeriod({ from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: iso(new Date(now.getFullYear(), now.getMonth(), 0)) });
+        } else if (shortcut === 'year') {
+            setPeriod({ from: iso(new Date(now.getFullYear(), 0, 1)), to: iso(new Date(now.getFullYear(), 11, 31)) });
+        }
+    };
+    const equipmentLabel = equipment === FATURAMENTO_EQUIPMENT.TRUCK
+        ? 'Caminhão Prancha LTU5A25'
+        : equipment === FATURAMENTO_EQUIPMENT.RETRO ? 'Retroescavadeira' : 'Todos os equipamentos';
+
+    return (
+        <section className="flex flex-col gap-5">
+            {data.faturamentoError && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle className="text-sm font-semibold">Faturamento não atualizado</AlertTitle><AlertDescription className="text-xs">{data.faturamentoError}{sourceReady && ' Os últimos dados carregados foram mantidos.'}</AlertDescription></Alert>}
+            {!sourceReady && !data.faturamentoError && <p role="status" className="text-sm text-[#1f7a46]">Carregando viagens e locações das planilhas…</p>}
+            <Card className="p-4 flex flex-col gap-3 bg-[#f8fcf9] border-[#cfe8d5]">
+                <div className="flex flex-wrap items-end gap-3">
+                    <div className="w-full text-sm font-semibold text-[#1f6b3d]">Filtros de faturamento</div>
+                    <Field label="Data inicial"><Input aria-label="Data inicial" type="date" value={period.from} onChange={(event) => setPeriod((current) => ({ ...current, from: event.target.value }))} className="w-44" /></Field>
+                    <Field label="Data final"><Input aria-label="Data final" type="date" value={period.to} onChange={(event) => setPeriod((current) => ({ ...current, to: event.target.value }))} className="w-44" /></Field>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium text-muted-foreground">Atalhos</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShortcut('month')}>Este mês</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShortcut('previous')}>Mês anterior</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShortcut('year')}>Este ano</Button>
+                            <Button type="button" size="sm" variant="ghost" onClick={() => setShortcut('all')}>Todo período</Button>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium text-muted-foreground">Equipamento</span>
+                        <Select value={equipment} onValueChange={setEquipment}>
+                            <SelectTrigger aria-label="Equipamento" className="w-64"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={FATURAMENTO_EQUIPMENT.ALL}>Todos</SelectItem>
+                                <SelectItem value={FATURAMENTO_EQUIPMENT.TRUCK}>Caminhão Prancha LTU5A25</SelectItem>
+                                <SelectItem value={FATURAMENTO_EQUIPMENT.RETRO}>Retroescavadeira</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {(period.from || period.to || equipment !== FATURAMENTO_EQUIPMENT.ALL) && <Button type="button" variant="ghost" size="sm" onClick={() => { clearPeriod(); setEquipment(FATURAMENTO_EQUIPMENT.ALL); }} className="gap-1.5 text-muted-foreground"><X className="h-4 w-4" />Limpar filtros</Button>}
+                </div>
+                <p className="text-xs text-muted-foreground">Exibindo: {equipmentLabel}{period.from || period.to ? ` · ${period.from ? formatDate(period.from) : 'início'} até ${period.to ? formatDate(period.to) : 'fim'}` : ' · todo o período disponível'}</p>
+                <p className="text-xs text-muted-foreground">Receitas pela data da viagem ou início da locação, sem repetir serviços entre meses. Custos registrados no Histórico de Manutenção, pela data do chamado; o status de cada lançamento aparece na tabela.</p>
+                {invalidPeriod && <p className="text-xs font-medium text-red-700">A data inicial não pode ser posterior à data final.</p>}
+            </Card>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <KpiCard label="Faturamento total" value={sourceReady ? BRL(revenueTotal) : '—'} accent="text-[#1f7a46]" />
+                <KpiCard label="Caminhão prancha" value={sourceReady ? BRL(summary.truck.revenue) : '—'} />
+                <KpiCard label="Retroescavadeira" value={sourceReady ? BRL(summary.retro.revenue) : '—'} />
+                <KpiCard label="Custos de manutenção" value={sourceReady ? BRL(maintenanceTotal) : '—'} accent="text-amber-700" />
+                <KpiCard label="Resultado líquido" value={sourceReady ? BRL(result) : '—'} accent={result >= 0 ? 'text-green-700' : 'text-red-700'} />
+                <KpiCard label="Margem" value={!sourceReady || margin === null ? '—' : `${NUM(margin, 1)}%`} sub={revenueTotal ? 'resultado / faturamento' : 'sem faturamento no período'} />
+            </div>
+
+            {sourceReady && <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ChartCard title="Faturamento por mês">
+                    {revenueByMonth.length === 0 ? <EmptyHint>Sem faturamento no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><BarChart data={revenueByMonth} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} width={56} /><Tooltip formatter={(value) => BRL(value)} /><Bar dataKey="faturamento" name="Faturamento" fill="#1f7a46" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>}
+                </ChartCard>
+                <ChartCard title="Faturamento por equipamento">
+                    {equipmentChart.length === 0 ? <EmptyHint>Sem faturamento no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={equipmentChart} dataKey="value" nameKey="name" innerRadius={48} outerRadius={88} paddingAngle={2}>{equipmentChart.map((row) => <Cell key={row.kind} fill={row.kind === FATURAMENTO_EQUIPMENT.TRUCK ? '#1f7a46' : '#2563eb'} />)}</Pie><Tooltip formatter={(value) => BRL(value)} /><Legend /></PieChart></ResponsiveContainer>}
+                </ChartCard>
+                <ChartCard title="Custos de manutenção por mês">
+                    {costsByMonth.length === 0 ? <EmptyHint>Sem custos no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><BarChart data={costsByMonth} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} width={56} /><Tooltip formatter={(value) => BRL(value)} /><Bar dataKey="custos" name="Custos" fill="#d97706" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>}
+                </ChartCard>
+                <ChartCard title="Faturamento × custos por mês">
+                    {monthlyComparison.length === 0 ? <EmptyHint>Sem dados no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><BarChart data={monthlyComparison} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} width={56} /><Tooltip formatter={(value) => BRL(value)} /><Legend /><Bar dataKey="faturamento" name="Faturamento" fill="#1f7a46" radius={[4, 4, 0, 0]} /><Bar dataKey="custos" name="Custos" fill="#d97706" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>}
+                </ChartCard>
+            </div>
+            <ChartCard title="Resultado líquido por mês">
+                {monthlyComparison.length === 0 ? <EmptyHint>Sem dados no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><BarChart data={monthlyComparison} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} width={56} /><Tooltip formatter={(value) => BRL(value)} /><Bar dataKey="resultado" name="Resultado líquido" radius={[4, 4, 0, 0]}>{monthlyComparison.map((row) => <Cell key={row.month} fill={row.resultado >= 0 ? '#15803d' : '#dc2626'} />)}</Bar></BarChart></ResponsiveContainer>}
+            </ChartCard>
+
+            <Card className="p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-semibold">Resumo por equipamento</h3><p className="text-xs text-muted-foreground">Valores calculados no mesmo período e com o mesmo filtro de equipamento.</p></div><Badge variant="outline">{revenueRows.length} serviço(s)</Badge></div>
+                <div className="mt-4"><ScrollTable head={<>{['Equipamento', 'Faturamento', 'Custo de manutenção', 'Resultado'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                    {[
+                        ['Caminhão Prancha LTU5A25', summary.truck],
+                        ['Retroescavadeira', summary.retro],
+                        ['TOTAL', { revenue: revenueTotal, cost: maintenanceTotal, result }],
+                    ].map(([label, row]) => <TableRow key={label} className={label === 'TOTAL' ? 'font-semibold bg-muted/40' : ''}><TableCell>{label}</TableCell><TableCell className="text-right">{BRL(row.revenue)}</TableCell><TableCell className="text-right">{BRL(row.cost)}</TableCell><TableCell className={cn('text-right', row.result >= 0 ? 'text-green-700' : 'text-red-700')}>{BRL(row.result)}</TableCell></TableRow>)}
+                </ScrollTable></div>
+            </Card>
+
+            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Detalhamento de faturamento</h3>{revenueRows.length === 0 ? <EmptyHint>Nenhum serviço faturado para os filtros selecionados.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo', 'Cliente', 'Descrição', 'Origem / local', 'Destino', 'Horas / período', 'Valor faturado', 'Observações'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{revenueRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs">{row.client || '—'}</TableCell><TableCell className="text-xs max-w-[210px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.origin || '—'}</TableCell><TableCell className="text-xs">{row.destination || '—'}</TableCell><TableCell className="text-right text-xs">{row.duration || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}</div>
+
+            <div className="flex justify-end text-sm font-semibold">Total faturado: {BRL(revenueTotal)}</div>
+            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Custos de manutenção</h3>{maintenanceRows.length === 0 ? <EmptyHint>Nenhum custo de manutenção dos equipamentos no período selecionado.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo / categoria', 'Descrição', 'Fornecedor', 'Valor', 'Observação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{maintenanceRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs max-w-[260px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.supplier || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}<div className="flex justify-end text-sm font-semibold">Total de custos: {BRL(maintenanceTotal)}</div></div>
+            </>}
         </section>
     );
 }
