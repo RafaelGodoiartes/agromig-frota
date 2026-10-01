@@ -1,6 +1,8 @@
 // The public dashboard is hosted on GitHub Pages. Its data/write backend is
 // the Google Apps Script Web App so the site no longer depends on Cloudflare.
-export const API_SERVER_URL = import.meta.env.VITE_API_BASE_URL
+import { abastecimentoCategory } from './abastecimentoTypes.js';
+
+export const API_SERVER_URL = import.meta.env?.VITE_API_BASE_URL
     || 'https://script.google.com/macros/s/AKfycbwC30lpHYigIiLK7Rz0Z3nP-5teqEXykCOkoZFLqLXgjfblaxj9cLTLJFOGUGD2-PKD/exec';
 
 const SHEET1_ID = '1_mGLa1rqNfuFdHyi3GwN1O0pFHvf9TTZKVwz5VCvjlc';
@@ -89,7 +91,7 @@ function commandForRoute(route, input) {
         const key = `${date.replace(/-/g, '')}-${plate}-${Date.now()}`;
         return {
             action: 'append', spreadsheetId: SHEET1_ID, sheetName: 'Gastos', pin: input.pin,
-            values: [date, plate, vehicle.veiculo, text(input.projeto), 'Combustível', text(input.item), total, num(input.km), text(input.motorista || input.fa), liters, unitPrice, text(input.posto), '', text(input.observacoes), 'PENDENTE', '', key],
+            values: [date, plate, vehicle.veiculo, text(input.projeto), abastecimentoCategory(input.categoria, input.item), text(input.item), total, num(input.km), text(input.motorista || input.fa), liters, unitPrice, text(input.posto), '', text(input.observacoes), 'PENDENTE', '', key],
         };
     }
     if (route === '/fleet/posto') {
@@ -154,3 +156,4 @@ const apiServerClient = {
 
 export default apiServerClient;
 export { apiServerClient };
+export { commandForRoute };

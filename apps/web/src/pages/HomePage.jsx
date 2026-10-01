@@ -30,6 +30,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ptBR } from 'date-fns/locale';
 import apiServerClient from '@/lib/apiServerClient';
 import { driverNameKey, summarizeChecklistDrivers } from '@/lib/checklistDrivers';
+import { DEFAULT_FUEL_ITEMS, abastecimentoCategory, abastecimentoUnit, changeAbastecimentoCategory, isFuelConsumption, mergeAbastecimentoRows, uniqueOptions } from '@/lib/abastecimentoTypes';
 import {
     FATURAMENTO_EQUIPMENT,
     aggregateByMonth,
@@ -202,7 +203,7 @@ function LancamentoDialog({ type, data, onSaved }) {
     const [message, setMessage] = useState('');
     const [files, setFiles] = useState([]);
     const [vehicleSearch, setVehicleSearch] = useState('');
-    const [form, setForm] = useState({ data: today(), placa: '', projeto: '', motorista: '', item: 'Diesel S-10', posto: '', litros: '', precoLitro: '', km: '', observacoes: '', tipo: 'Preventiva', status: 'AGENDADO', dataPrevista: today(), dataConclusao: '', descricao: '', peca: '', valor: '', responsavel: '', fornecedor: '', folderUrl: '', pin: '' });
+    const [form, setForm] = useState({ data: today(), placa: '', projeto: '', motorista: '', categoria: 'Combustível', item: 'Diesel S-10', posto: '', litros: '', precoLitro: '', km: '', observacoes: '', tipo: 'Preventiva', status: 'AGENDADO', dataPrevista: today(), dataConclusao: '', descricao: '', peca: '', valor: '', responsavel: '', fornecedor: '', folderUrl: '', pin: '' });
     const [extraStations, setExtraStations] = useState(() => (typeof window === 'undefined' ? [] : readLocalStations()));
     const [postoDialogOpen, setPostoDialogOpen] = useState(false);
     const [postoSaving, setPostoSaving] = useState(false);
@@ -243,6 +244,16 @@ function LancamentoDialog({ type, data, onSaved }) {
     const scheduledPending = useMemo(() => (data?.manutencao || [])
         .filter(isScheduledPending)
         .sort((a, b) => String(a.dataPrevista || '').localeCompare(String(b.dataPrevista || ''))), [data]);
+    const abastecimentoTypes = useMemo(() => uniqueOptions([
+        'Combustível', 'Graxa', ...(data?.tiposAbastecimento || []),
+        ...(data?.outrosAbastecimentos || []).map((row) => row.categoria),
+    ]), [data?.tiposAbastecimento, data?.outrosAbastecimentos]);
+    const productOptions = useMemo(() => {
+        if (isFuelConsumption({ categoria: form.categoria })) return DEFAULT_FUEL_ITEMS;
+        const items = uniqueOptions(['Graxa', ...(data?.itensAbastecimento || []), ...(data?.outrosAbastecimentos || []).map((row) => row.item)]);
+        return searchKey(form.categoria).includes('graxa') ? items.filter((item) => searchKey(item).includes('graxa')) : items;
+    }, [form.categoria, data?.itensAbastecimento, data?.outrosAbastecimentos]);
+    const quantityUnit = abastecimentoUnit(form.categoria, form.item);
     const fuelUnitPrice = useMemo(() => {
         const liters = inputNumber(form.litros);
         const total = inputNumber(form.valor);
@@ -297,11 +308,16 @@ function LancamentoDialog({ type, data, onSaved }) {
         event.preventDefault();
         setSaving(true); setMessage('');
         try {
+            if (isFuel) {
+                if (!form.categoria || !form.item) throw new Error('Informe o tipo de abastecimento e o combustível / produto.');
+                if (!(inputNumber(form.litros) > 0)) throw new Error(`Informe uma quantidade válida em ${quantityUnit}.`);
+                if (!(inputNumber(form.valor) > 0)) throw new Error('Informe um valor total válido.');
+            }
             if (files.length > 5) throw new Error('Selecione no máximo 5 anexos.');
             if (files.reduce((sum, file) => sum + file.size, 0) > 8 * 1024 * 1024) throw new Error('Os anexos devem somar no máximo 8 MB.');
             const attachments = isFuel ? [] : await Promise.all(files.map(fileAsBase64));
             const payload = isFuel
-                ? { data: form.data, placa: form.placa, projeto: form.projeto, motorista: form.motorista, item: form.item, posto: form.posto, litros: form.litros, valor: form.valor, precoLitro: fuelUnitPrice, km: form.km, observacoes: form.observacoes, pin: form.pin }
+                ? { data: form.data, placa: form.placa, projeto: form.projeto, motorista: form.motorista, categoria: form.categoria, item: form.item, posto: form.posto, litros: form.litros, valor: form.valor, precoLitro: fuelUnitPrice, km: form.km, observacoes: form.observacoes, pin: form.pin }
                 : { dataChamado: form.data, placa: form.placa, projeto: form.projeto, tipo: form.tipo, status: form.status, dataPrevista: form.dataPrevista, dataConclusao: form.dataConclusao, descricao: form.descricao, peca: form.peca, valor: form.valor, km: form.km, responsavel: form.responsavel, fornecedor: form.fornecedor, folderUrl: form.folderUrl, files: attachments, pin: form.pin };
             const response = await apiServerClient.fetch(`/fleet/${type}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const body = await response.json().catch(() => ({}));
@@ -350,11 +366,13 @@ function LancamentoDialog({ type, data, onSaved }) {
                     <Field label="Projeto"><Select value={form.projeto} onValueChange={(v) => set('projeto', v)} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
                     <Field label="KM / horímetro"><Input inputMode="decimal" value={form.km} onChange={(e) => set('km', e.target.value)} /></Field>
                     {isFuel ? <>
-                        <Field label="Combustível"><Select value={form.item} onValueChange={(v) => set('item', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Diesel S-10', 'Diesel S-500', 'Gasolina Comum', 'Etanol', 'ARLA'].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
+                        <Field label="Tipo de abastecimento"><Select value={form.categoria} onValueChange={(v) => setForm((current) => changeAbastecimentoCategory(current, v))} required><SelectTrigger aria-label="Tipo de abastecimento"><SelectValue /></SelectTrigger><SelectContent>{abastecimentoTypes.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
+                        <Field label="Combustível / produto"><Select value={form.item} onValueChange={(v) => setForm((current) => ({ ...current, item: v, categoria: abastecimentoCategory(current.categoria, v) }))} required><SelectTrigger aria-label="Combustível / produto"><SelectValue placeholder="Selecione o produto" /></SelectTrigger><SelectContent>{productOptions.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
                     <Field label="Posto"><div className="flex gap-2"><Select value={form.posto} onValueChange={(v) => set('posto', v)} required><SelectTrigger className="flex-1"><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{stations.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select><Button type="button" variant="outline" size="icon" title="Cadastrar novo posto" onClick={() => { setPostoMessage(''); setPostoDialogOpen(true); }}><Plus className="h-4 w-4" /></Button></div></Field>
-                        <Field label="Litros"><Input inputMode="decimal" value={form.litros} onChange={(e) => set('litros', e.target.value)} required /></Field>
+                        <Field label={quantityUnit === 'kg' ? 'Quantidade (kg)' : 'Litros'}><Input aria-label={quantityUnit === 'kg' ? 'Quantidade (kg)' : 'Litros'} inputMode="decimal" value={form.litros} onChange={(e) => set('litros', e.target.value)} required /></Field>
                         <Field label="Valor total do abastecimento (R$)"><Input inputMode="decimal" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Ex.: 450,00" required /></Field>
-                        <Field label="Preço por litro (calculado)"><Input value={fuelUnitPrice === null ? '' : fuelUnitPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} readOnly className="bg-muted/50" /></Field>
+                        <Field label={quantityUnit === 'kg' ? 'Preço por kg (calculado)' : 'Preço por litro (calculado)'}><Input aria-label="Preço unitário calculado" value={fuelUnitPrice === null ? '' : fuelUnitPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} readOnly className="bg-muted/50" /></Field>
+                        {quantityUnit === 'kg' && <p className="text-xs text-muted-foreground sm:col-span-2">Graxa é registrada em kg e não entra no cálculo de KM/L.</p>}
                         <Field label="Motorista / responsável"><Input value={form.motorista} onChange={(e) => set('motorista', e.target.value)} placeholder="Preenchido pela placa, mas pode ser alterado" /></Field>
                         <Field label="Observações"><Input value={form.observacoes} onChange={(e) => set('observacoes', e.target.value)} /></Field>
                     </> : <>
@@ -966,7 +984,7 @@ function matchesFuelRow(row, filters, search) {
     if (filters.posto !== 'all' && row.posto !== filters.posto) return false;
     if (filters.placa !== 'all' && row.placa !== filters.placa) return false;
     const query = searchKey(search);
-    return !query || searchKey(`${row.placa} ${row.veiculo} ${row.item} ${row.posto} ${row.projeto}`).includes(query);
+    return !query || searchKey(`${row.placa} ${row.veiculo} ${row.categoria} ${row.item} ${row.posto} ${row.projeto}`).includes(query);
 }
 
 function maintenanceService(row) {
@@ -1287,15 +1305,25 @@ function AbastecimentoView({ data, filters, search }) {
     const [fuelFilter, setFuelFilter] = useState('all');
     const [projectFilter, setProjectFilter] = useState('all');
     const [monthFilter, setMonthFilter] = useState('all');
+    const [categoryFilter, setCategoryFilter] = useState('all');
     const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
     const rows = useMemo(() => data.abastecimento
+        .filter(isFuelConsumption)
         .filter((row) => matchesFuelRow(row, filters, search))
         .filter((row) => {
             return matchesVehicleStatus(row.placa, filters.statusVeiculo, activeVehicleKeys);
         }), [data.abastecimento, filters, search, activeVehicleKeys]);
     const projectRows = useMemo(() => projectFilter === 'all' ? rows : rows.filter((row) => row.projeto === projectFilter), [rows, projectFilter]);
     const monthRows = useMemo(() => monthFilter === 'all' ? projectRows : projectRows.filter((row) => row.anoMes === monthFilter), [projectRows, monthFilter]);
-    const visibleRows = useMemo(() => fuelFilter === 'postos' ? monthRows.filter((r) => r.posto) : monthRows, [monthRows, fuelFilter]);
+    const allEntries = useMemo(() => mergeAbastecimentoRows(data.abastecimento, data.outrosAbastecimentos), [data.abastecimento, data.outrosAbastecimentos]);
+    const categoryOptions = useMemo(() => uniqueOptions(['Combustível', 'Graxa', ...(data.tiposAbastecimento || []), ...allEntries.map((row) => row.categoria)]), [data.tiposAbastecimento, allEntries]);
+    const visibleRows = useMemo(() => allEntries
+        .filter((row) => matchesFuelRow(row, filters, search) && matchesVehicleStatus(row.placa, filters.statusVeiculo, activeVehicleKeys))
+        .filter((row) => projectFilter === 'all' || row.projeto === projectFilter)
+        .filter((row) => monthFilter === 'all' || row.anoMes === monthFilter)
+        .filter((row) => fuelFilter !== 'postos' || row.posto)
+        .filter((row) => categoryFilter === 'all' || searchKey(abastecimentoCategory(row.categoria, row.item)) === searchKey(categoryFilter)),
+    [allEntries, filters, search, activeVehicleKeys, projectFilter, monthFilter, fuelFilter, categoryFilter]);
 
     const kpis = useMemo(() => {
         const litros = monthRows.reduce((s, r) => s + (r.litros || 0), 0);
@@ -1365,6 +1393,7 @@ function AbastecimentoView({ data, filters, search }) {
         const unidadePorPlaca = new Map((data.veiculos || []).map((vehicle) => [vehicleKey(vehicle.placa), normalizedStatus(vehicle.unidade)]));
         const grupos = new Map();
         data.abastecimento.forEach((row, sourceIndex) => {
+            if (!isFuelConsumption(row)) return;
             const key = vehicleKey(row.placa);
             const nonVehicleFuel = searchKey(`${row.placa} ${row.veiculo} ${row.item}`);
             if (nonVehicleFuel.includes('galao') || nonVehicleFuel.includes('embarcac') || /^equ\d*/.test(searchKey(row.placa))) return;
@@ -1429,6 +1458,8 @@ function AbastecimentoView({ data, filters, search }) {
 
     return (
         <section className="flex flex-col gap-5">
+            {data.abastecimentoExtrasError && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Tipos de abastecimento não atualizados</AlertTitle><AlertDescription>{data.abastecimentoExtrasError}</AlertDescription></Alert>}
+            <p className="text-xs text-muted-foreground">Indicadores e gráficos de consumo consideram apenas combustível. Graxa e outros tipos podem ser consultados na tabela de lançamentos abaixo.</p>
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 <KpiCard label="Abastecimentos" value={NUM(kpis.count)} active={fuelFilter === 'all'} onClick={() => setFuelFilter('all')} />
                 <KpiCard label="Litros" value={NUM(kpis.litros, 1)} />
@@ -1519,9 +1550,11 @@ function AbastecimentoView({ data, filters, search }) {
             </div>
             <div className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold text-foreground">Lançamentos de abastecimento</h3>
+                <FilterSelect label="Tipo de abastecimento (tabela)" value={categoryFilter} onChange={setCategoryFilter} options={categoryOptions} />
+                {data.abastecimentoExtrasLoading && <p role="status" className="text-xs text-muted-foreground">Atualizando graxa e demais tipos de abastecimento…</p>}
                 {visibleRows.length === 0 ? <EmptyHint>Nenhum abastecimento para os filtros selecionados.</EmptyHint> : (
                     <ScrollTable head={
-                        <>{['Data', 'Placa', 'Veículo', 'KM', 'Projeto', 'Posto', 'Item', 'Litros', 'R$/L', 'Valor', 'Status'].map((h) => <TableHead key={h}>{h}</TableHead>)}</>
+                        <>{['Data', 'Placa', 'Veículo', 'KM', 'Projeto', 'Posto', 'Tipo', 'Item', 'Quantidade', 'R$/unidade', 'Valor', 'Status'].map((h) => <TableHead key={h}>{h}</TableHead>)}</>
                     }>
                         {visibleRows.slice(0, 200).map((r, i) => (
                             <TableRow key={i}>
@@ -1531,8 +1564,9 @@ function AbastecimentoView({ data, filters, search }) {
                                 <TableCell className="text-right">{Number.isFinite(r.km) ? NUM(r.km, 1) : '—'}{r.kmEstimado && <span className="ml-1 text-[10px] text-amber-700" title="KM estimado pela média entre os lançamentos anterior e posterior">(média)</span>}</TableCell>
                                 <TableCell className="text-xs">{r.projeto}</TableCell>
                                 <TableCell className="text-xs">{r.posto}</TableCell>
+                                <TableCell className="text-xs">{abastecimentoCategory(r.categoria, r.item)}</TableCell>
                                 <TableCell className="text-xs">{r.item}</TableCell>
-                                <TableCell className="text-right">{NUM(r.litros, 2)}</TableCell>
+                                <TableCell className="text-right whitespace-nowrap">{NUM(r.litros, 2)}{r.litros != null ? ` ${abastecimentoUnit(r.categoria, r.item)}` : ''}</TableCell>
                                 <TableCell className="text-right">{r.precoLitro ? BRL(r.precoLitro) : '—'}</TableCell>
                                 <TableCell className="text-right font-medium">{BRL(r.valor)}</TableCell>
                                 <TableCell><Badge variant={r.status === 'OK' ? 'secondary' : 'outline'} className={r.status === 'REVISAR' ? 'border-amber-400 text-amber-700' : ''}>{r.status || '—'}</Badge></TableCell>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import apiServerClient from '@/lib/apiServerClient';
 import { loadFaturamentoSources } from '@/lib/faturamentoSources';
+import { loadAbastecimentoSources } from '@/lib/abastecimentoSources';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
 const VEHICLE_LIMITS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=1477905702&tq=select%20A%2CE%2CI';
@@ -65,6 +66,7 @@ export function useFleetData() {
     const loadingRef = useRef(false);
     const checklistRequestRef = useRef(0);
     const financeRequestRef = useRef(0);
+    const abastecimentoRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
         if (loadingRef.current) return;
@@ -96,17 +98,34 @@ export function useFleetData() {
             // painel principal nunca ficam bloqueados se o Epicollect5 demorar.
             const checklistRequestId = ++checklistRequestRef.current;
             const financeRequestId = ++financeRequestRef.current;
+            const abastecimentoRequestId = ++abastecimentoRequestRef.current;
             setData((current) => ({
                 ...enrichedJson,
                 viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
                 locacoesRetroescavadeira: enrichedJson.locacoesRetroescavadeira ?? current?.locacoesRetroescavadeira,
                 faturamentoLoading: true,
                 faturamentoError: null,
+                tiposAbastecimento: current?.tiposAbastecimento || ['Combustível', 'Graxa'],
+                itensAbastecimento: current?.itensAbastecimento || [],
+                outrosAbastecimentos: current?.outrosAbastecimentos || [],
+                abastecimentoExtrasLoading: true,
+                abastecimentoExtrasError: null,
                 checklist: current?.checklist ?? [],
                 checklistLoaded: current?.checklistLoaded === true,
                 checklistLoading: true,
                 checklistError: null,
             }));
+            loadAbastecimentoSources()
+                .then((sources) => setData((current) => (
+                    current && abastecimentoRequestRef.current === abastecimentoRequestId
+                        ? { ...current, ...sources, abastecimentoExtrasLoading: false, abastecimentoExtrasError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && abastecimentoRequestRef.current === abastecimentoRequestId
+                        ? { ...current, abastecimentoExtrasLoading: false, abastecimentoExtrasError: 'Não foi possível atualizar as categorias e os lançamentos de graxa/lubrificantes. Os últimos dados foram mantidos; tente Atualizar novamente.' }
+                        : current
+                )));
             loadFaturamentoSources(enrichedJson)
                 .then((finance) => setData((current) => (
                     current && financeRequestRef.current === financeRequestId

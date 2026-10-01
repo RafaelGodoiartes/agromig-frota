@@ -218,7 +218,7 @@ const createAbastecimentoHandler = async (req, res) => {
         const dataLancamento = anoInformado > anoAtual
             ? `${anoAtual}${dataInformada.slice(4)}`
             : dataInformada;
-        const litros = requiredNumber(req.body.litros, 'Litragem', { min: 0.01 });
+        const litros = requiredNumber(req.body.litros, 'Quantidade', { min: 0.01 });
         const suppliedTotal = toNum(req.body.valor);
         const legacyUnitPrice = toNum(req.body.precoLitro);
         if ((suppliedTotal === null || suppliedTotal <= 0) && (legacyUnitPrice === null || legacyUnitPrice <= 0)) {
@@ -229,13 +229,14 @@ const createAbastecimentoHandler = async (req, res) => {
             : Math.round(litros * legacyUnitPrice * 100) / 100;
         const precoLitro = Math.round((valor / litros) * 10000) / 10000;
         const item = text(req.body.item);
+        const categoria = /graxa/i.test(item) ? 'Graxa' : (text(req.body.categoria) || 'Combustível');
         const fornecedor = normPosto(req.body.posto);
-        if (!item || !fornecedor) return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Informe combustível e posto.' });
+        if (!item || !fornecedor) return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Informe combustível / produto e posto.' });
         const chave = `${dataLancamento.replace(/-/g, '')}-${placa}-${Date.now()}`;
         await appendSheetRow({
             spreadsheetId: SHEET1_ID,
             sheetName: 'Gastos',
-            values: [dataLancamento, placa, veiculo.veiculo, projeto, 'Combustível', item, valor, toNum(req.body.km) || '', text(req.body.fa), litros, precoLitro, fornecedor, '', text(req.body.observacoes), 'PENDENTE', '', chave],
+            values: [dataLancamento, placa, veiculo.veiculo, projeto, categoria, item, valor, toNum(req.body.km) || '', text(req.body.fa), litros, precoLitro, fornecedor, '', text(req.body.observacoes), 'PENDENTE', '', chave],
         });
         cache = null;
         res.status(201).json({ ok: true, message: 'Abastecimento gravado na planilha e enviado para conferência.' });
