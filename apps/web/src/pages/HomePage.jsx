@@ -39,6 +39,7 @@ import {
     summarizeByEquipment,
 } from '@/lib/faturamento';
 import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwnedVehicles } from '@/lib/ownedVehicleFinance';
+import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanceParts';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -1816,6 +1817,78 @@ function ComprasPecasView({ data, filters, search }) {
     );
 }
 
+function MaintenancePartsPanel({ data, filters, search }) {
+    const [view, setView] = useState('compras');
+    const [from, setFrom] = useState(filters.periodStart || '');
+    const [to, setTo] = useState(filters.periodEnd || '');
+    const [plate, setPlate] = useState(filters.placa || 'all');
+    useEffect(() => { setFrom(filters.periodStart || ''); setTo(filters.periodEnd || ''); }, [filters.periodStart, filters.periodEnd]);
+    useEffect(() => { setPlate(filters.placa || 'all'); }, [filters.placa]);
+    const result = useMemo(() => summarizeMaintenanceParts(data.comprasPecas, {
+        from, to, plate, search, currentDate: localIsoDate(new Date()), vehicles: data.veiculos,
+    }), [data.comprasPecas, data.veiculos, from, to, plate, search]);
+    const plates = useMemo(() => [...new Set((data.comprasPecas || []).map((row) => resolvePartsVehicle(row.placa, data.veiculos)).filter(Boolean))].sort(), [data.comprasPecas, data.veiculos]);
+    const modelByPlate = useMemo(() => new Map((data.veiculos || []).map((row) => [vehicleKey(row.placa), row.veiculo])), [data.veiculos]);
+    const applyMonth = () => {
+        const now = new Date();
+        setFrom(localIsoDate(new Date(now.getFullYear(), now.getMonth(), 1)));
+        setTo(localIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0)));
+    };
+    const selectedRows = view === 'estoque' ? result.stockRows : view === 'caras' ? result.expensiveRows : result.periodRows;
+    const views = [{ id: 'compras', label: 'Compras do período' }, { id: 'estoque', label: 'Estoque atual' }, { id: 'caras', label: 'Peças mais caras' }, { id: 'veiculos', label: 'Veículos atendidos' }];
+    const selectedTotal = view === 'estoque' ? result.stockCents : view === 'caras'
+        ? result.expensiveRows.reduce((sum, row) => sum + row.amountCents, 0) : result.totalCents;
+    return (
+        <section aria-label="Compras de peças — gastos e estoque" className="flex flex-col gap-4 rounded-2xl border border-green-200 bg-green-50/30 p-3 sm:p-5">
+            <div className="flex items-start gap-3">
+                <PackageOpen className="mt-1 h-6 w-6 shrink-0 text-green-700" />
+                <div><h2 className="text-lg font-semibold text-green-950">Compras de Peças — Gastos e Estoque</h2>
+                    <p className="text-sm text-muted-foreground">Fonte: aba Compras de Peças. Gastos pela data de entrada; estoque atual inclui compras de meses anteriores.</p></div>
+            </div>
+            <Card className="p-4 flex flex-col gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div><Label htmlFor="parts-period-from">Entrada a partir de</Label><Input id="parts-period-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></div>
+                    <div><Label htmlFor="parts-period-to">Entrada até</Label><Input id="parts-period-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></div>
+                    <FilterSelect label="Veículo das peças" value={plate} onChange={setPlate} options={plates.includes(plate) || plate === 'all' ? plates : [plate, ...plates]} />
+                </div>
+                <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={applyMonth}>Este mês</Button><Button variant="outline" size="sm" onClick={() => { setFrom(''); setTo(''); }}>Todo período</Button></div>
+                <p className="text-xs text-muted-foreground">Esta seção usa período de entrada, veículo e busca. Projeto, tipo de manutenção e serviço não filtram peças: esses campos não constam na aba de compras. Os gastos de peças não são somados aos chamados acima, evitando contabilização dupla.</p>
+            </Card>
+            {!result.available ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Compras de peças indisponíveis</AlertTitle><AlertDescription>A integração não retornou esta aba. Atualize os dados antes de consultar os totais.</AlertDescription></Alert> : <>
+                {result.invalidPeriod && <Alert variant="destructive"><AlertDescription>A data final deve ser igual ou posterior à inicial.</AlertDescription></Alert>}
+                {(result.missingDates > 0 || result.invalidDates > 0 || result.missingValues > 0 || result.stockMissingValues > 0) && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Dados a conferir na planilha</AlertTitle><AlertDescription>{result.missingDates} lançamento(s) sem entrada válida, fora dos gastos por período; {result.invalidDates} com datas inconsistentes, fora do estoque. Valores não informados: {result.missingValues} no período e {result.stockMissingValues} no estoque. Os totais somam apenas valores válidos.</AlertDescription></Alert>}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                    <KpiCard label="Gasto em peças no período" value={formatFinanceBRL(result.totalCents)} sub={`${NUM(result.periodRows.length)} lançamento(s)`} accent="text-green-800" onClick={() => setView('compras')} active={view === 'compras'} />
+                    <KpiCard label="Estoque atual" value={formatFinanceBRL(result.stockCents)} sub={`${NUM(result.stockRows.length)} lançamento(s) ainda não utilizados`} onClick={() => setView('estoque')} active={view === 'estoque'} />
+                    <KpiCard label="Compra mais cara no período" value={result.expensiveRows.length ? formatFinanceBRL(result.expensiveRows[0].amountCents) : '—'} sub={result.expensiveRows[0]?.peca || 'Nenhuma compra com valor informado'} onClick={() => setView('caras')} active={view === 'caras'} />
+                    <KpiCard label="Veículos atendidos no período" value={NUM(result.vehicles.length)} sub="Com placa vinculada à compra" onClick={() => setView('veiculos')} active={view === 'veiculos'} />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <ChartCard title="Gastos com peças por mês de entrada">
+                        {result.monthly.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={result.monthly} margin={{ top: 10, right: 12, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" stroke="#d1e7d8" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tickFormatter={COMPACT_BRL} tick={{ fontSize: 11 }} width={65} /><Tooltip formatter={(value) => [BRL(value), 'Compras de peças']} /><Bar dataKey="valor" fill="#15803d" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer> : <EmptyHint>Nenhuma compra com data de entrada no período.</EmptyHint>}
+                    </ChartCard>
+                    <ChartCard title="Veículos com maior gasto em peças — Top 10">
+                        {result.vehicles.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={result.vehicles.slice(0, 10).map((row) => ({ ...row, valor: row.amountCents / 100 }))} layout="vertical" margin={{ top: 8, right: 12, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" stroke="#d1e7d8" /><XAxis type="number" tickFormatter={COMPACT_BRL} tick={{ fontSize: 11 }} /><YAxis type="category" dataKey="placa" width={100} tick={{ fontSize: 11 }} /><Tooltip formatter={(value) => [BRL(value), 'Peças compradas']} /><Bar dataKey="valor" fill="#166534" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer> : <EmptyHint>Nenhuma compra vinculada a veículo no período.</EmptyHint>}
+                    </ChartCard>
+                </div>
+                <div className="flex flex-wrap gap-2" aria-label="Tabelas de compras de peças">
+                    {views.map((item) => <Button key={item.id} size="sm" variant={view === item.id ? 'default' : 'outline'} aria-pressed={view === item.id} onClick={() => setView(item.id)} className={view === item.id ? 'bg-green-700 text-white hover:bg-green-800' : ''}>{item.label}</Button>)}
+                </div>
+                <div className="flex flex-col gap-2">
+                    <h3 className="font-semibold text-green-950">{views.find((item) => item.id === view).label}</h3>
+                    <p className="text-xs text-muted-foreground">{view === 'estoque' ? 'Entradas já registradas, sem saída realizada até hoje. A contagem é de lançamentos: a fonte não informa quantidade de unidades.' : view === 'caras' ? 'Top 10 ordenado pelo valor total do lançamento, não pelo preço unitário. A compra mais cara está destacada.' : 'Somente compras com data de entrada dentro do período selecionado.'}</p>
+                    {view === 'veiculos' ? result.vehicles.length ? <ScrollTable head={<>{['Placa', 'Veículo', 'Lançamentos', 'Total em peças'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                        {result.vehicles.map((row) => <TableRow key={row.plateKey}><TableCell className="font-mono">{row.placa}</TableCell><TableCell>{modelByPlate.get(row.plateKey) || 'Não informado'}</TableCell><TableCell>{NUM(row.count)}</TableCell><TableCell className="text-right font-semibold text-green-800">{formatFinanceBRL(row.amountCents)}{row.missingValues > 0 && <span className="block text-xs text-amber-800">Subtotal: {row.missingValues} sem valor</span>}</TableCell></TableRow>)}
+                    </ScrollTable> : <EmptyHint>Nenhum veículo com compra no período.</EmptyHint> : selectedRows.length ? <ScrollTable head={<>{['Peça / descrição', 'Fornecedor', 'Veículo / placa', 'Entrada', 'Saída / utilização', 'Status', 'Valor do lançamento'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                        {selectedRows.map((row, index) => <TableRow key={row.key} className={view === 'caras' && index === 0 ? 'bg-green-100 font-semibold' : ''}><TableCell className="min-w-[160px] max-w-[300px] whitespace-normal">{view === 'caras' && <span className="mr-2 text-green-700">{index + 1}º</span>}{row.peca || 'Não informada'}{row.tipo && <span className="block text-xs text-muted-foreground">{row.tipo}</span>}</TableCell><TableCell>{row.fornecedor || 'Não informado'}</TableCell><TableCell>{row.placa || 'Sem veículo definido'}</TableCell><TableCell className="whitespace-nowrap">{row.entryDate ? formatDate(row.entryDate) : 'Não informada'}</TableCell><TableCell className="whitespace-nowrap">{row.exitDate ? formatDate(row.exitDate) : '—'}</TableCell><TableCell><Badge variant="outline" className={row.status === 'Em estoque' ? 'border-green-300 text-green-800 bg-green-50' : ''}>{row.status}</Badge></TableCell><TableCell className="text-right whitespace-nowrap font-semibold">{formatFinanceBRL(row.amountCents)}</TableCell></TableRow>)}
+                    </ScrollTable> : <EmptyHint>Nenhum lançamento nesta seleção.</EmptyHint>}
+                    <div className="rounded-lg bg-white border border-green-200 p-3 text-right font-semibold text-green-950">{view === 'veiculos' ? 'Total vinculado aos veículos' : view === 'caras' ? 'Total das 10 maiores compras' : view === 'estoque' ? 'Valor conhecido em estoque' : 'Total conhecido no período'}: {formatFinanceBRL(view === 'veiculos' ? result.vehicles.reduce((sum, row) => sum + row.amountCents, 0) : selectedTotal)}</div>
+                </div>
+            </>}
+        </section>
+    );
+}
+
 function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }) {
     const [typeFilter, setTypeFilter] = useState('all');
     const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
@@ -1944,6 +2017,7 @@ function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }
                     </ResponsiveContainer>
                 </ChartCard>
             </div>
+            <MaintenancePartsPanel data={data} filters={filters} search={search} />
             <div className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold text-foreground">Histórico de manutenção</h3>
                 {visibleRows.length === 0 ? <EmptyHint>Nenhum registro de manutenção para os filtros selecionados.</EmptyHint> : (
