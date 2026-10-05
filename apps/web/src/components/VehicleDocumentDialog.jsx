@@ -4,7 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { API_SERVER_URL } from '@/lib/apiServerClient';
 
-const DOCUMENT_PORTAL_URL = import.meta.env.VITE_DOCUMENT_PORTAL_URL || '';
+// Separate authenticated deployment; the existing anonymous data/launch API
+// remains untouched. This URL is public configuration, not a credential.
+const DOCUMENT_PORTAL_URL = import.meta.env.VITE_DOCUMENT_PORTAL_URL
+    || 'https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec';
 
 // Folder discovery/uploads run inside Google's authenticated portal, never
 // through the anonymous dashboard endpoint or a client-supplied Drive URL.
@@ -31,6 +34,7 @@ export default function VehicleDocumentDialog() {
                 <DialogHeader><DialogTitle>Documentos do veículo no Drive</DialogTitle><DialogDescription>Selecione a placa, confirme a pasta em Operações e envie o documento.</DialogDescription></DialogHeader>
                 <ol className="list-decimal pl-5 space-y-2 text-sm">
                     <li>Entre com uma conta autorizada do setor de Frotas.</li>
+                    <li>No primeiro acesso, confira e autorize a integração no Google.</li>
                     <li>Escolha a placa. Se existir mais de uma pasta, confirme a correta.</li>
                     <li>Escolha uma subpasta existente ou crie uma nova.</li>
                     <li>Confira o destino e anexe um PDF, JPG ou PNG.</li>

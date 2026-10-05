@@ -1,9 +1,19 @@
 # Portal de documentos da frota
 
-Arquivos e rotas adicionados ao projeto ativo em 05/10/2026; **portal ainda não
-publicado nem liberado para envio**. Falta confirmar os usuários autorizados,
-configurar a propriedade de acesso e validar a implantação autenticada. O botão do
-painel só libera o envio quando a integração responder `documentPortalReady`.
+Portal publicado em 05/10/2026, versão 22, em uma implantação separada que exige
+conta da organização Agromig e executa como o usuário visitante. A integração
+pública do dashboard e dos lançamentos não foi modificada.
+
+Lista de usuários confirmada pelo responsável e configurada em propriedade de
+script: Rafael, Eduardo e Frota, nos respectivos e-mails `@agromig.com.br`.
+Cada usuário precisa confirmar a autorização Google no primeiro acesso e já
+possuir acesso às pastas no Drive; o portal não concede nem altera permissões.
+
+URL publicada (configuração pública, não credencial):
+https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec?action=documentPortal
+
+Validação: regras de autorização, placas, destinos e upload verificadas por testes
+isolados. A validação com a conta real depende da autorização inicial do Google.
 
 ## Instalação sem substituir o conector existente
 
