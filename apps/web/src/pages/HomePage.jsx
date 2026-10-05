@@ -38,8 +38,9 @@ import {
     buildRevenueRows,
     summarizeByEquipment,
 } from '@/lib/faturamento';
-import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwnedVehicles } from '@/lib/ownedVehicleFinance';
+import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance } from '@/lib/ownedVehicleFinance';
 import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanceParts';
+import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -103,7 +104,6 @@ const TABS = [
     { id: 'documentacao', label: 'Documentação', icon: FileCheck },
     { id: 'km', label: 'KM Rodado', icon: Gauge },
     { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
-    { id: 'compras-pecas', label: 'Compras de Peças', icon: PackageOpen },
     { id: 'faturamento', label: 'Faturamento', icon: CircleDollarSign },
 ];
 
@@ -808,6 +808,7 @@ export default function HomePage() {
                         <CompraPecaDialog data={data} onSaved={refresh} />
                         <KmSemanalDialog data={data} onSaved={refresh} />
                         <VeiculoDialog data={data} onSaved={refresh} />
+                        <VehicleDocumentDialog />
                     </div>
                 </section>
                 {/* Source notice */}
@@ -931,7 +932,6 @@ export default function HomePage() {
                         {tab === 'documentacao' && <DocumentacaoView data={data} filters={filters} search={search} />}
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
                         {tab === 'checklist' && <ChecklistView data={data} filters={filters} search={search} />}
-                        {tab === 'compras-pecas' && <ComprasPecasView data={data} filters={filters} search={search} />}
                         {tab === 'faturamento' && <FaturamentoView data={data} />}
                     </>
                 )}
@@ -1588,9 +1588,11 @@ function OwnedVehiclesFinanceView({ data, period }) {
     const summary = useMemo(() => summarizeOwnedVehicles(data.cadastroFinanceiro || []), [data.cadastroFinanceiro]);
     const schedule = useMemo(() => insuranceSchedule(), []);
     const insurance = useMemo(() => summarizeInsurance(month, null, schedule), [month, schedule]);
+    const variableExpense = useMemo(() => summarizeOwnedMaintenance(data.manutencao, summary.rows, month), [data.manutencao, summary.rows, month]);
     const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
     const complete = ready && !summary.missingValues.length && !summary.conflicts.length;
-    const resultCents = complete && validMonth ? summary.totalCents - insurance.expenseCents : null;
+    const costsComplete = variableExpense.available && !variableExpense.missingDates && !variableExpense.missingValues;
+    const resultCents = complete && validMonth && costsComplete ? summary.totalCents - insurance.expenseCents - variableExpense.totalCents : null;
 
     // A single-month date filter also selects its insurance installment. For
     // broader periods this separate monthly view keeps an explicit competence.
@@ -1607,7 +1609,7 @@ function OwnedVehiclesFinanceView({ data, period }) {
                 <div className="space-y-1">
                     <h3 className="text-base font-semibold text-[#1f6b3d]">Faturamento Mensal — Veículos Próprios</h3>
                     <p className="text-xs text-muted-foreground">Fonte: Cadastro de Veículos · TIPO DE POSSE = Próprio · ALUGUEL MENSAL (R$).</p>
-                    <p className="text-xs text-muted-foreground">Valores atuais do Cadastro, sem reconstrução de receitas históricas. O mês abaixo define a parcela do seguro. Viagens, locações e manutenção continuam nos indicadores separados.</p>
+                    <p className="text-xs text-muted-foreground">Receita pelos valores atuais do Cadastro, sem reconstrução histórica. O mês abaixo define a despesa fixa (parcela prevista do seguro) e a despesa variável (manutenções dos próprios, pela data do chamado). Não inclui veículos locados nem soma novamente esses valores aos indicadores das viagens.</p>
                 </div>
                 <div className="flex flex-col gap-1 shrink-0">
                     <Label htmlFor="owned-finance-month" className="text-xs">Mês do resumo e seguro</Label>
@@ -1616,15 +1618,18 @@ function OwnedVehiclesFinanceView({ data, period }) {
             </div>
             {data.cadastroFinanceiroError && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Cadastro financeiro não atualizado</AlertTitle><AlertDescription>{data.cadastroFinanceiroError}</AlertDescription></Alert>}
             {!ready && !data.cadastroFinanceiroError && <p role="status" className="text-sm text-[#1f7a46]">Carregando valores mensais do Cadastro…</p>}
-            {(summary.missingValues.length > 0 || summary.conflicts.length > 0) && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Conferir valores no Cadastro</AlertTitle><AlertDescription>{summary.missingValues.length > 0 && <p>Sem valor mensal válido: {summary.missingValues.join(', ')}.</p>}{summary.conflicts.length > 0 && <p>Placas duplicadas com posse ou valor divergente, excluídas do subtotal: {summary.conflicts.join(', ')}.</p>}O resultado após seguro só é exibido quando todos os valores estão conferidos.</AlertDescription></Alert>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(summary.missingValues.length > 0 || summary.conflicts.length > 0) && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Conferir valores no Cadastro</AlertTitle><AlertDescription>{summary.missingValues.length > 0 && <p>Sem valor mensal válido: {summary.missingValues.join(', ')}.</p>}{summary.conflicts.length > 0 && <p>Placas duplicadas com posse ou valor divergente, excluídas do subtotal: {summary.conflicts.join(', ')}.</p>}O resultado após despesas só é exibido quando todos os valores estão conferidos.</AlertDescription></Alert>}
+            {(!variableExpense.available || variableExpense.missingDates > 0 || variableExpense.missingValues > 0) && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Conferir despesas variáveis</AlertTitle><AlertDescription>{!variableExpense.available ? 'Histórico de manutenção indisponível.' : `${variableExpense.missingDates} manutenção(ões) de próprios sem data válida e ${variableExpense.missingValues} sem valor no mês. O total é parcial e o resultado não pode ser confirmado.`}</AlertDescription></Alert>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 <KpiCard label="Receita mensal com veículos próprios" value={ready ? formatFinanceBRL(summary.totalCents) : '—'} sub={ready ? `${summary.rows.length} veículo(s) único(s)${complete ? '' : ' · subtotal dos valores válidos'}` : 'aguardando Cadastro'} accent="text-[#1f7a46]" />
-                <KpiCard label="Despesa mensal com seguro" value={validMonth ? formatFinanceBRL(insurance.expenseCents) : '—'} sub={validMonth ? insurance.installment ? `Parcela ${insurance.installment.number}/10 · vence em ${formatDate(insurance.installment.dueDate)}` : 'Sem parcela contratada neste mês' : 'Selecione um mês válido'} accent="text-amber-700" />
-                <KpiCard label="Resultado após seguro" value={resultCents === null ? '—' : formatFinanceBRL(resultCents)} sub="Receita mensal − parcela prevista do seguro" accent={resultCents >= 0 ? 'text-green-700' : 'text-red-700'} />
+                <KpiCard label="Despesa variável — Manutenção" value={ready && validMonth && variableExpense.available ? formatFinanceBRL(variableExpense.totalCents) : '—'} sub={`${variableExpense.rows.length} manutenção(ões) de próprios no mês${costsComplete ? '' : ' · subtotal'}`} accent="text-amber-700" />
+                <KpiCard label="Despesa fixa — Seguro" value={validMonth ? formatFinanceBRL(insurance.expenseCents) : '—'} sub={validMonth ? insurance.installment ? `Parcela ${insurance.installment.number}/10 · vence em ${formatDate(insurance.installment.dueDate)}` : 'Sem parcela contratada neste mês' : 'Selecione um mês válido'} accent="text-amber-700" />
+                <KpiCard label="Resultado após despesas" value={resultCents === null ? '—' : formatFinanceBRL(resultCents)} sub="Receita mensal − manutenção − seguro previsto" accent={resultCents >= 0 ? 'text-green-700' : 'text-red-700'} />
             </div>
+            {ready && <details className="rounded-lg border bg-white p-3"><summary className="cursor-pointer text-sm font-medium text-[#1f6b3d]">Despesa variável — Manutenções dos próprios no mês ({variableExpense.rows.length})</summary><div className="mt-3">{variableExpense.rows.length ? <ScrollTable head={<>{['Data do chamado', 'Placa', 'Descrição', 'Fornecedor', 'Status', 'Valor'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{variableExpense.rows.map((row) => <TableRow key={row.key}><TableCell className="whitespace-nowrap">{formatDate(row.date)}</TableCell><TableCell>{row.placa}</TableCell><TableCell className="whitespace-normal">{row.descricao || '—'}</TableCell><TableCell>{row.fornecedor || '—'}</TableCell><TableCell>{row.status || 'Não informado'}</TableCell><TableCell className="whitespace-nowrap text-right">{formatFinanceBRL(row.amountCents)}</TableCell></TableRow>)}</ScrollTable> : <EmptyHint>Nenhuma manutenção de veículo próprio registrada neste mês.</EmptyHint>}<p className="mt-2 text-right font-semibold">Total conhecido: {formatFinanceBRL(variableExpense.totalCents)}</p></div></details>}
             {ready && <details className="rounded-lg border bg-white p-3"><summary className="cursor-pointer text-sm font-medium text-[#1f6b3d]">Veículos próprios considerados ({summary.rows.length})</summary><div className="mt-3"><ScrollTable head={<>{['Placa', 'Veículo', 'Projeto', 'Aluguel mensal'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{summary.rows.map((row) => <TableRow key={row.plateKey}><TableCell className="whitespace-nowrap">{row.placa}</TableCell><TableCell>{row.veiculo || '—'}</TableCell><TableCell>{row.projeto || '—'}</TableCell><TableCell className="text-right whitespace-nowrap">{row.amountCents === null ? 'Sem valor cadastrado' : formatFinanceBRL(row.amountCents)}</TableCell></TableRow>)}<TableRow className="font-semibold bg-muted/40"><TableCell colSpan={3}>{complete ? 'Total mensal' : 'Subtotal dos valores válidos'}</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(summary.totalCents)}</TableCell></TableRow></ScrollTable></div></details>}
             <div className="border-t border-[#cfe8d5] pt-4 flex flex-col gap-3">
-                <div><h4 className="text-sm font-semibold text-[#1f6b3d]">Seguro — Veículos Próprios</h4><p className="text-xs text-muted-foreground">Um único contrato para o conjunto, sem multiplicar a parcela pelo número de veículos. Vencimentos da apólice: 13/08/2026 a 13/05/2027.</p></div>
+                <div><h4 className="text-sm font-semibold text-[#1f6b3d]">Custo Fixo — Seguro dos Veículos Próprios</h4><p className="text-xs text-muted-foreground">Um único contrato para o conjunto, sem multiplicar a parcela pelo número de veículos. Vencimentos da apólice: 13/08/2026 a 13/05/2027.</p></div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                     <KpiCard label="Total contratado" value={formatFinanceBRL(insurance.totalCents)} sub="10 parcelas · 9 de R$ 4.177,19 e a última de R$ 4.177,21" />
                     <KpiCard label="Parcela no mês selecionado" value={validMonth ? insurance.installment ? `${insurance.installment.number} de ${schedule.length}` : 'Nenhuma' : '—'} sub={validMonth ? formatFinanceBRL(insurance.expenseCents) : 'Selecione um mês'} />
@@ -1722,7 +1727,7 @@ function FaturamentoView({ data }) {
                 <KpiCard label="Faturamento total" value={sourceReady ? BRL(revenueTotal) : '—'} accent="text-[#1f7a46]" />
                 <KpiCard label="Caminhão prancha" value={sourceReady ? BRL(summary.truck.revenue) : '—'} />
                 <KpiCard label="Retroescavadeira" value={sourceReady ? BRL(summary.retro.revenue) : '—'} />
-                <KpiCard label="Custos de manutenção" value={sourceReady ? BRL(maintenanceTotal) : '—'} accent="text-amber-700" />
+                <KpiCard label="Custo variável — Manutenção" value={sourceReady ? BRL(maintenanceTotal) : '—'} sub="Dos equipamentos e do período selecionados" accent="text-amber-700" />
                 <KpiCard label="Resultado líquido" value={sourceReady ? BRL(result) : '—'} accent={result >= 0 ? 'text-green-700' : 'text-red-700'} />
                 <KpiCard label="Margem" value={!sourceReady || margin === null ? '—' : `${NUM(margin, 1)}%`} sub={revenueTotal ? 'resultado / faturamento' : 'sem faturamento no período'} />
             </div>
@@ -1737,7 +1742,7 @@ function FaturamentoView({ data }) {
                 <ChartCard title="Faturamento por equipamento">
                     {equipmentChart.length === 0 ? <EmptyHint>Sem faturamento no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={equipmentChart} dataKey="value" nameKey="name" innerRadius={48} outerRadius={88} paddingAngle={2}>{equipmentChart.map((row) => <Cell key={row.kind} fill={row.kind === FATURAMENTO_EQUIPMENT.TRUCK ? '#1f7a46' : '#2563eb'} />)}</Pie><Tooltip formatter={(value) => BRL(value)} /><Legend /></PieChart></ResponsiveContainer>}
                 </ChartCard>
-                <ChartCard title="Custos de manutenção por mês">
+                <ChartCard title="Custo variável — Manutenção por mês">
                     {costsByMonth.length === 0 ? <EmptyHint>Sem custos no período selecionado.</EmptyHint> : <ResponsiveContainer width="100%" height="100%"><BarChart data={costsByMonth} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} width={56} /><Tooltip formatter={(value) => BRL(value)} /><Bar dataKey="custos" name="Custos" fill="#d97706" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>}
                 </ChartCard>
                 <ChartCard title="Faturamento × custos por mês">
@@ -1750,7 +1755,7 @@ function FaturamentoView({ data }) {
 
             <Card className="p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-semibold">Resumo por equipamento</h3><p className="text-xs text-muted-foreground">Valores calculados no mesmo período e com o mesmo filtro de equipamento.</p></div><Badge variant="outline">{revenueRows.length} serviço(s)</Badge></div>
-                <div className="mt-4"><ScrollTable head={<>{['Equipamento', 'Faturamento', 'Custo de manutenção', 'Resultado'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                <div className="mt-4"><ScrollTable head={<>{['Equipamento', 'Faturamento', 'Custo variável — Manutenção', 'Resultado'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
                     {[
                         ['Caminhão Prancha LTU5A25', summary.truck],
                         ['Retroescavadeira', summary.retro],
@@ -1762,7 +1767,7 @@ function FaturamentoView({ data }) {
             <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Detalhamento de faturamento</h3>{revenueRows.length === 0 ? <EmptyHint>Nenhum serviço faturado para os filtros selecionados.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo', 'Cliente', 'Descrição', 'Origem / local', 'Destino', 'Horas / período', 'Valor faturado', 'Observações'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{revenueRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs">{row.client || '—'}</TableCell><TableCell className="text-xs max-w-[210px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.origin || '—'}</TableCell><TableCell className="text-xs">{row.destination || '—'}</TableCell><TableCell className="text-right text-xs">{row.duration || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}</div>
 
             <div className="flex justify-end text-sm font-semibold">Total faturado: {BRL(revenueTotal)}</div>
-            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Custos de manutenção</h3>{maintenanceRows.length === 0 ? <EmptyHint>Nenhum custo de manutenção dos equipamentos no período selecionado.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo / categoria', 'Descrição', 'Fornecedor', 'Valor', 'Observação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{maintenanceRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs max-w-[260px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.supplier || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}<div className="flex justify-end text-sm font-semibold">Total de custos: {BRL(maintenanceTotal)}</div></div>
+            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Custo variável — Manutenção</h3>{maintenanceRows.length === 0 ? <EmptyHint>Nenhum custo de manutenção dos equipamentos no período selecionado.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo / categoria', 'Descrição', 'Fornecedor', 'Valor', 'Observação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{maintenanceRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs max-w-[260px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.supplier || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}<div className="flex justify-end text-sm font-semibold">Total de custo variável: {BRL(maintenanceTotal)}</div></div>
             </>}
         </section>
     );

@@ -1,3 +1,5 @@
+import { isoDate } from './faturamento.js';
+
 const text = (value) => String(value ?? '').trim();
 const key = (value) => text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 const plateKey = (value) => key(value).replace(/[^A-Z0-9]/g, '');
@@ -60,6 +62,34 @@ export function insuranceSchedule(plan = OWNED_FLEET_INSURANCE) {
         dueDate: new Date(Date.UTC(year, month - 1 + index, day)).toISOString().slice(0, 10),
         amountCents: index === plan.installments - 1 ? plan.lastCents : plan.regularCents,
     }));
+}
+
+export function summarizeOwnedMaintenance(maintenance, ownedRows, month) {
+    const owned = new Set((ownedRows || []).map((row) => row.plateKey || plateKey(row.placa)));
+    const seen = new Set();
+    const rows = [];
+    let missingDates = 0;
+    (Array.isArray(maintenance) ? maintenance : []).forEach((row, index) => {
+        const plate = plateKey(row.placa);
+        if (!owned.has(plate)) return;
+        const date = isoDate(row.dataChamado);
+        if (!date) { missingDates += 1; return; }
+        if (date.slice(0, 7) !== month) return;
+        const amountCents = moneyCents(row.custoTotal ?? row.valor);
+        // Only repeated source IDs with identical financial fields are deduplicated.
+        // Two separate purchases/maintenance calls with equal values remain distinct.
+        const identity = row.id === null || row.id === undefined || row.id === '' ? `row-${index}`
+            : `${row.id}|${plate}|${date}|${amountCents}|${text(row.descricao)}`;
+        if (seen.has(identity)) return;
+        seen.add(identity);
+        rows.push({ ...row, key: `owned-maintenance-${index}`, date, plateKey: plate, amountCents });
+    });
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    return {
+        available: Array.isArray(maintenance), rows, missingDates,
+        missingValues: rows.filter((row) => row.amountCents === null).length,
+        totalCents: rows.reduce((sum, row) => sum + (row.amountCents ?? 0), 0),
+    };
 }
 
 export function summarizeInsurance(month, paidInstallments = null, schedule = insuranceSchedule()) {

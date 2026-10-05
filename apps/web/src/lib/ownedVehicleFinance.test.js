@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatFinanceBRL, insuranceSchedule, moneyCents, summarizeInsurance, summarizeOwnedVehicles } from './ownedVehicleFinance.js';
+import { formatFinanceBRL, insuranceSchedule, moneyCents, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance } from './ownedVehicleFinance.js';
 
 const vehicle = (placa, tipoPosse, aluguelMensal) => ({ placa, tipoPosse, aluguelMensal });
 
@@ -89,4 +89,36 @@ test('formata todos os valores em reais com duas casas decimais', () => {
     assert.equal(normalized(4177192), 'R$ 41.771,92');
     assert.equal(normalized(0), 'R$ 0,00');
     assert.equal(normalized(null), 'Não informado');
+});
+
+test('despesa variável mensal inclui somente manutenção dos próprios, na competência escolhida', () => {
+    const owned = summarizeOwnedVehicles([vehicle('AAA1B23', 'Próprio', 5000), vehicle('BBB2C34', 'Locado', 9000)]);
+    const source = [
+        { id: 1, placa: 'aaa-1b23', dataChamado: '2026-10-01', custoTotal: 'R$ 1.234,56', valor: 9999 },
+        { id: 2, placa: 'AAA1B23', dataChamado: '31/10/2026', valor: 10.01 },
+        { id: 3, placa: 'AAA1B23', dataChamado: '2026-09-30', valor: 500 },
+        { id: 4, placa: 'BBB2C34', dataChamado: '2026-10-01', valor: 800 },
+    ];
+    const result = summarizeOwnedMaintenance(source, owned.rows, '2026-10');
+    assert.equal(result.totalCents, 124457);
+    assert.equal(result.rows.length, 2);
+    const fixed = summarizeInsurance('2026-10').expenseCents;
+    assert.equal(owned.totalCents - result.totalCents - fixed, -42176);
+    source[0].custoTotal = 100;
+    assert.equal(summarizeOwnedMaintenance(source, owned.rows, '2026-10').totalCents, 11001);
+});
+test('não duplica a mesma manutenção e preserva lançamentos distintos com valores iguais', () => {
+    const owned = summarizeOwnedVehicles([vehicle('AAA1B23', 'Próprio', 1000)]);
+    const record = { id: 1, placa: 'AAA1B23', dataChamado: '2026-10-01', valor: 100 };
+    const result = summarizeOwnedMaintenance([record, { ...record }, { ...record, id: 2 }], owned.rows, '2026-10');
+    assert.equal(result.totalCents, 20000);
+    assert.equal(result.rows.length, 2);
+});
+test('custos sem data/valor e fonte indisponível não se tornam zeros confirmados', () => {
+    const owned = summarizeOwnedVehicles([vehicle('AAA1B23', 'Próprio', 1000)]);
+    const result = summarizeOwnedMaintenance([{ placa: 'AAA1B23', dataChamado: '', valor: 100 }, { placa: 'AAA1B23', dataChamado: '2026-10-01', valor: '' }], owned.rows, '2026-10');
+    assert.equal(result.missingDates, 1);
+    assert.equal(result.missingValues, 1);
+    assert.equal(result.totalCents, 0);
+    assert.equal(summarizeOwnedMaintenance(undefined, owned.rows, '2026-10').available, false);
 });
