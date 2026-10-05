@@ -12,8 +12,12 @@ possuir acesso às pastas no Drive; o portal não concede nem altera permissões
 URL publicada (configuração pública, não credencial):
 https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec?action=documentPortal
 
-Validação: regras de autorização, placas, destinos e upload verificadas por testes
-isolados. A validação com a conta real depende da autorização inicial do Google.
+Validação em 05/10/2026: 57 testes passaram, incluindo autorização, placas,
+destinos e upload com Drive/Sheets simulados. Após autorização Google, a conta
+Frota carregou o Cadastro e encontrou a LTU5A25 dentro de `03 - OPERAÇÃO`,
+com as subpastas reais de CRLV, tacógrafo e demais documentos. O botão publicado
+no dashboard aponta para o portal autenticado. Não foram criadas pastas nem
+enviados arquivos de teste ao Drive de produção.
 
 ## Instalação sem substituir o conector existente
 
