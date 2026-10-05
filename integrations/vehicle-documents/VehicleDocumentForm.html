@@ -12,6 +12,7 @@
 <body><main>
   <h1>AGROMIG · Documentos da Frota</h1>
   <p>Selecione a placa do Cadastro e confirme a pasta em <strong>Operações</strong>. Os arquivos mantêm as permissões do Drive, sem compartilhamento público.</p>
+  <p class="note" id="access-note">Consulta disponível para contas @agromig.com.br. Envio e criação de pastas continuam restritos ao setor de Frotas.</p>
   <form id="upload-form">
     <fieldset id="controls">
       <label for="plate">Placa / equipamento</label><select id="plate" required><option value="">Carregando veículos…</option></select>
@@ -26,11 +27,13 @@
         <p id="files-message" role="status" aria-live="polite">Escolha a placa e a pasta para consultar.</p>
         <div id="file-list"></div>
       </section>
-      <label for="new-folder">Criar uma nova subpasta (opcional)</label><input id="new-folder" maxlength="120" placeholder="Ex.: Certificado de tacógrafo">
+      <section id="upload-controls" hidden>
+      <label for="new-folder">Criar uma nova subpasta (opcional)</label><input id="new-folder" maxlength="120" placeholder="Ex.: Certificado de tacógrafo" disabled>
       <button id="create-folder" type="button" disabled>Criar subpasta no veículo selecionado</button>
-      <label for="file">Documento — PDF, JPG ou PNG (até 8 MB)</label><input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" required>
+      <label for="file">Documento — PDF, JPG ou PNG (até 8 MB)</label><input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" required disabled>
       <p class="note">O envio apenas guarda o arquivo. Datas e situação na planilha de documentação não serão alteradas por este formulário.</p>
       <button id="send" type="submit" disabled>Confirmar destino e enviar documento</button>
+      </section>
     </fieldset>
   </form>
   <p id="message" role="status" aria-live="polite">Carregando cadastro…</p><div id="result"></div>
@@ -41,6 +44,7 @@
   let generation = 0;
   let destinations = [];
   let busy = false;
+  let canUpload = false;
   let files = [];
   let filesLoading = false;
   let filesGeneration = 0;
@@ -53,8 +57,8 @@
     $(id).disabled = !rows.length;
   }
   function ready() {
-    $('send').disabled = busy || !$('plate').value || !$('vehicle-folder').value || !$('destination').value;
-    $('create-folder').disabled = busy || !$('vehicle-folder').value;
+    $('send').disabled = !canUpload || busy || !$('plate').value || !$('vehicle-folder').value || !$('destination').value;
+    $('create-folder').disabled = !canUpload || busy || !$('vehicle-folder').value;
     $('refresh-files').disabled = busy || filesLoading || !$('destination').value;
   }
   const searchKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -127,7 +131,7 @@
       if (current !== generation) return;
       destinations = rows;
       options('destination', rows, 'Escolha a pasta de destino', 'id', (row) => row.path);
-      message('Escolha uma pasta existente ou crie uma nova subpasta.'); ready();
+      message(canUpload ? 'Escolha uma pasta existente ou crie uma nova subpasta.' : 'Escolha uma pasta existente para consultar os documentos.'); ready();
     } catch (error) { if (current === generation) message(error.message, true); }
   });
   $('destination').addEventListener('change', () => {
@@ -137,6 +141,7 @@
     ready();
   });
   $('create-folder').addEventListener('click', async () => {
+    if (!canUpload) return;
     if (busy || !$('vehicle-folder').value || !$('new-folder').value.trim()) return message('Informe o nome da subpasta e selecione o veículo.', true);
     busy = true; $('controls').disabled = true; ready();
     try {
@@ -152,6 +157,7 @@
   });
   $('upload-form').addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!canUpload) return;
     const file = $('file').files[0];
     if (busy || !$('destination').value || !file) return;
     if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type) || file.size > 8 * 1024 * 1024 || !file.size) return message('Selecione um PDF, JPG ou PNG de até 8 MB.', true);
@@ -171,7 +177,14 @@
     } catch (error) { message(error.message, true); }
     finally { busy = false; $('controls').disabled = false; ready(); }
   });
-  call('getFleetDocumentVehicles').then((rows) => {
+  call('getFleetDocumentAccess').then((access) => {
+    canUpload = access.canUpload === true;
+    $('upload-controls').hidden = !canUpload;
+    $('file').disabled = !canUpload;
+    $('new-folder').disabled = !canUpload;
+    ready();
+    return call('getFleetDocumentVehicles');
+  }).then((rows) => {
     options('plate', rows, 'Selecione a placa', 'plate', (row) => row.plate + ' · ' + row.model);
     message('Selecione um veículo para iniciar.');
   }).catch((error) => message(error.message, true));

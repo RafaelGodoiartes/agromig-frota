@@ -2,21 +2,36 @@
 const FLEET_DOCUMENT_ROOT = '1zm7M3-8ucbSx2HwNz4Ri6Ps-cbzWTT41'; // 03 - OPERAÇÃO
 const FLEET_DOCUMENT_REGISTRY = '1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM';
 
-function fleetDocumentUser_() {
+function fleetDocumentReader_() {
   const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  // Verified Google identity only; do not accept lookalike domains or posted emails.
+  if (!/^[^@\s]+@agromig\.com\.br$/.test(email)) throw new Error('Acesso restrito a contas Google @agromig.com.br. Entre com seu e-mail corporativo.');
+  return email;
+}
+
+function fleetDocumentCanUpload_(email) {
   const configured = PropertiesService.getScriptProperties().getProperty('FROTA_DOCUMENT_UPLOAD_EMAILS') || '';
   const allowed = configured.split(/[,;\n]/).map(function (item) { return item.trim().toLowerCase(); }).filter(Boolean);
+  return allowed.indexOf(email) !== -1;
+}
+
+function fleetDocumentUser_() {
+  const email = fleetDocumentReader_();
   // Never trust getEffectiveUser(), a posted email, a PIN or a caller-supplied folder URL.
-  if (!email || allowed.indexOf(email) === -1) throw new Error('Acesso restrito ao setor de Frotas. Entre com uma conta autorizada do Google. Se a conta não for identificada, publique o portal para executar como o usuário que acessa.');
+  if (!fleetDocumentCanUpload_(email)) throw new Error('Acesso restrito ao setor de Frotas para enviar documentos ou criar pastas. Sua conta pode consultar os arquivos permitidos no Drive.');
   return email;
+}
+
+function getFleetDocumentAccess() {
+  return { canUpload: fleetDocumentCanUpload_(fleetDocumentReader_()) };
 }
 
 function fleetDocumentPortal_() {
   try {
-    fleetDocumentUser_();
+    fleetDocumentReader_();
     return HtmlService.createHtmlOutputFromFile('VehicleDocumentForm').setTitle('Documentos da Frota — Agromig');
   } catch (error) {
-    return HtmlService.createHtmlOutput('<h2>Documentos da Frota — Agromig</h2><p>Acesso restrito. Entre com uma conta autorizada do setor de Frotas. A integração não identificou uma conta com permissão.</p><p>Não envie senha ou token pelo site. Solicite ao administrador a ativação do portal autenticado.</p>').setTitle('Acesso restrito');
+    return HtmlService.createHtmlOutput('<h2>Documentos da Frota — Agromig</h2><p>Acesso restrito a contas Google @agromig.com.br. Entre com seu e-mail corporativo. A integração não identificou uma conta com permissão.</p><p>Não envie senha ou token pelo site. O portal deve executar como o usuário que acessa.</p>').setTitle('Acesso restrito');
   }
 }
 
@@ -50,7 +65,7 @@ function fleetDocumentVehicles_() {
 }
 
 function getFleetDocumentVehicles() {
-  fleetDocumentUser_();
+  fleetDocumentReader_();
   return fleetDocumentVehicles_();
 }
 
@@ -88,7 +103,7 @@ function fleetDocumentVehicleFolders_(plate) {
 }
 
 function getFleetDocumentFolders(plate) {
-  fleetDocumentUser_();
+  fleetDocumentReader_();
   return fleetDocumentVehicleFolders_(plate);
 }
 
@@ -120,12 +135,12 @@ function fleetDocumentSubfolders_(parent) {
 }
 
 function getFleetDocumentDestinations(plate, vehicleFolderId) {
-  fleetDocumentUser_();
+  fleetDocumentReader_();
   return fleetDocumentSubfolders_(fleetDocumentVehicleFolder_(plate, vehicleFolderId));
 }
 
 function getFleetDocumentFiles(plate, vehicleFolderId, folderId) {
-  fleetDocumentUser_();
+  fleetDocumentReader_();
   const vehicle = fleetDocumentVehicleFolder_(plate, vehicleFolderId);
   const destination = fleetDocumentSubfolders_(vehicle).find(function (row) { return row.id === String(folderId); });
   if (!destination) throw new Error('Pasta fora do veículo selecionado.');

@@ -1,18 +1,23 @@
 # Portal de documentos da frota
 
-Portal publicado em 05/10/2026, versão 23, em uma implantação separada que exige
+Portal publicado em 05/10/2026, versão 24, em uma implantação separada que exige
 conta da organização Agromig e executa como o usuário visitante. A integração
 pública do dashboard e dos lançamentos não foi modificada.
 
-Lista de usuários confirmada pelo responsável e configurada em propriedade de
-script: Rafael, Eduardo e Frota, nos respectivos e-mails `@agromig.com.br`.
+Consulta autorizada pelo responsável para qualquer identidade Google autenticada
+do domínio exato `@agromig.com.br`. Contas externas, subdomínios e identidade vazia
+são bloqueados. Envio e criação de pastas continuam limitados à lista da propriedade
+`FROTA_DOCUMENT_UPLOAD_EMAILS`: Rafael, Eduardo e Frota nos e-mails corporativos.
+Os controles de escrita ficam ocultos para os demais usuários, com validação
+independente no servidor. O e-mail enviado pelo navegador nunca autoriza o acesso.
 Cada usuário precisa confirmar a autorização Google no primeiro acesso e já
 possuir acesso às pastas no Drive; o portal não concede nem altera permissões.
 
 URL publicada (configuração pública, não credencial):
 https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec?action=documentPortal
 
-Validação em 05/10/2026: 60 testes passaram, incluindo autorização, placas,
+Validação em 05/10/2026: 61 testes passaram, incluindo autorização por domínio,
+bloqueio de escrita para leitores, identidade vazia/domínios semelhantes, placas,
 destinos e upload com Drive/Sheets simulados. Após autorização Google, a conta
 Frota carregou o Cadastro e encontrou a LTU5A25 dentro de `03 - OPERAÇÃO`,
 com as subpastas reais de CRLV, tacógrafo e demais documentos. O botão publicado
@@ -44,7 +49,8 @@ Arquivos em subpastas aparecem após selecionar a respectiva subpasta.
    ```
 
 3. Defina a propriedade de script `FROTA_DOCUMENT_UPLOAD_EMAILS` somente com
-   os e-mails autorizados de Frotas, separados por vírgula. Não registre senhas
+   os e-mails autorizados para **envio/criação de pastas**, separados por vírgula.
+   A consulta valida o domínio corporativo no servidor. Não registre senhas
    nem tokens. Não use o usuário efetivo/proprietário como identidade do visitante.
 4. Crie uma implantação separada para o portal, executando como o usuário que
    acessa e exigindo Conta Google. **Não altere a implantação pública atual** que

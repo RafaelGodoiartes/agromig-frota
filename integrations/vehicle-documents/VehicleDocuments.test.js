@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('./VehicleDocuments.gs', import.meta.url), 'utf8');
-function fixture(email = 'allowed@example.com', allow = 'allowed@example.com') {
+function fixture(email = 'allowed@agromig.com.br', allow = 'allowed@agromig.com.br') {
     const iterator = (values) => { let index = 0; return { hasNext: () => index < values.length, next: () => values[index++] }; };
     const folders = new Map();
     let filesCreated = 0;
@@ -36,12 +36,33 @@ function fixture(email = 'allowed@example.com', allow = 'allowed@example.com') {
 }
 
 test('portal exige identidade Google autorizada; e-mail postado não autoriza', () => {
-    for (const [email, allow] of [['', 'allowed@example.com'], ['other@example.com', 'allowed@example.com'], ['allowed@example.com', '']]) {
+    for (const email of ['', 'other@example.com', 'user@sub.agromig.com.br', 'user@agromig.com.br.evil', 'user@fakeagromig.com.br', 'user@agromig.com.br@evil.com']) {
+        const allow = 'allowed@agromig.com.br';
         const { context } = fixture(email, allow);
         assert.throws(() => context.getFleetDocumentVehicles(), /Acesso restrito/);
-        assert.throws(() => context.uploadFleetDocument({ email: 'allowed@example.com' }), /Acesso restrito/);
+        assert.throws(() => context.uploadFleetDocument({ email: 'allowed@agromig.com.br' }), /Acesso restrito/);
+        assert.throws(() => context.getFleetDocumentAccess(), /Acesso restrito/);
+        assert.throws(() => context.getFleetDocumentFolders('LTU5A25'), /Acesso restrito/);
+        assert.throws(() => context.getFleetDocumentDestinations('LTU5A25', 'truck'), /Acesso restrito/);
+        assert.throws(() => context.createFleetDocumentFolder('LTU5A25', 'truck', 'Nova'), /Acesso restrito/);
         assert.throws(() => context.getFleetDocumentFiles('LTU5A25', 'truck', 'crlv'), /Acesso restrito/);
     }
+});
+
+test('consulta permite todo o domínio corporativo sem ampliar envio ou criação de pastas', () => {
+    for (const allow of ['allowed@agromig.com.br', '']) {
+        const { context, filesCreated } = fixture(' Funcionario@AGROMIG.COM.BR ', allow);
+        assert.equal(context.getFleetDocumentAccess().canUpload, false);
+        assert.equal(context.getFleetDocumentVehicles().length, 1);
+        assert.equal(context.getFleetDocumentFolders('LTU5A25')[0].id, 'truck');
+        assert.equal(context.getFleetDocumentDestinations('LTU5A25', 'truck').length, 2);
+        assert.equal(context.getFleetDocumentFiles('LTU5A25', 'truck', 'crlv').files.length, 0);
+        assert.throws(() => context.createFleetDocumentFolder('LTU5A25', 'truck', 'Nova'), /setor de Frotas/);
+        assert.throws(() => context.uploadFleetDocument({ email: 'allowed@agromig.com.br' }), /setor de Frotas/);
+        assert.equal(filesCreated(), 0);
+    }
+    assert.equal(fixture().context.getFleetDocumentAccess().canUpload, true);
+    assert.throws(() => fixture('external@example.com', 'external@example.com').context.fleetDocumentUser_(), /Acesso restrito/);
 });
 
 test('placa exata reconhece separadores, mas não placas maiores ou outra placa', () => {
@@ -137,15 +158,27 @@ test('portal descarta consulta antiga quando placa ou pasta muda', async () => {
         let success;
         return { withSuccessHandler(callback) { success = callback; return this; }, withFailureHandler() {
             return new Proxy({}, { get: (_, method) => () => {
-                if (method === 'getFleetDocumentVehicles') success([]);
+                if (method === 'getFleetDocumentAccess') success({ canUpload: false });
+                else if (method === 'getFleetDocumentVehicles') success([]);
                 else pending.push(success);
             } });
         } };
     };
     const context = { document: { getElementById(id) { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); }, createElement: () => new Element() }, Option: class {}, google: { script: { get run() { return runner(); } } } };
     vm.createContext(context); vm.runInContext(script, context);
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(elements.get('upload-controls').hidden, true);
+    assert.equal(elements.get('send').disabled, true);
+    assert.equal(elements.get('create-folder').disabled, true);
+    assert.equal(elements.get('file').disabled, true);
     elements.get('plate').value = 'LTU5A25'; elements.get('vehicle-folder').value = 'truck'; elements.get('destination').value = 'crlv';
+    context.ready();
+    assert.equal(elements.get('send').disabled, true);
+    assert.equal(elements.get('create-folder').disabled, true);
+    assert.equal(elements.get('refresh-files').disabled, false);
+    await elements.get('upload-form').events.submit({ preventDefault() {} });
+    await elements.get('create-folder').events.click();
+    assert.equal(pending.length, 0);
     const oldRequest = context.loadFiles();
     context.resetDestination();
     pending.shift()({ files: [documentFile('old', 'old.pdf')], folderUrl: 'https://drive.google.com/drive/folders/crlv' });

@@ -35,7 +35,7 @@ export default function VehicleDocumentDialog({ mode = 'upload' }) {
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader><DialogTitle>Documentos do veículo no Drive</DialogTitle><DialogDescription>{browsing ? 'Consulte os documentos existentes por placa e pasta, com acesso autorizado do Google.' : 'Selecione a placa, confirme a pasta em Operações e envie o documento.'}</DialogDescription></DialogHeader>
                 <ol className="list-decimal pl-5 space-y-2 text-sm">
-                    <li>Entre com uma conta autorizada do setor de Frotas.</li>
+                    <li>{browsing ? 'Entre com seu e-mail corporativo @agromig.com.br.' : 'Entre com uma conta autorizada do setor de Frotas. O envio continua restrito.'}</li>
                     <li>No primeiro acesso, confira e autorize a integração no Google.</li>
                     <li>Escolha a placa. Se existir mais de uma pasta, confirme a correta.</li>
                     <li>{browsing ? 'Escolha a pasta do documento: CRLV, laudos, tacógrafo ou outra pasta existente.' : 'Escolha uma subpasta existente ou crie uma nova.'}</li>
