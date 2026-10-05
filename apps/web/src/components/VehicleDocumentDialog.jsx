@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FileCheck, Loader2, ExternalLink } from 'lucide-react';
+import { FileCheck, FolderSearch, Loader2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { API_SERVER_URL } from '@/lib/apiServerClient';
@@ -11,7 +11,9 @@ const DOCUMENT_PORTAL_URL = import.meta.env.VITE_DOCUMENT_PORTAL_URL
 
 // Folder discovery/uploads run inside Google's authenticated portal, never
 // through the anonymous dashboard endpoint or a client-supplied Drive URL.
-export default function VehicleDocumentDialog() {
+export default function VehicleDocumentDialog({ mode = 'upload' }) {
+    const browsing = mode === 'browse';
+    const Icon = browsing ? FolderSearch : FileCheck;
     const [open, setOpen] = useState(false);
     const [status, setStatus] = useState('loading');
     useEffect(() => {
@@ -29,20 +31,20 @@ export default function VehicleDocumentDialog() {
     }, [open]);
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button variant="outline" className="gap-2"><FileCheck className="h-4 w-4" />Lançar documento</Button></DialogTrigger>
+            <DialogTrigger asChild><Button variant="outline" className="gap-2"><Icon className="h-4 w-4" />{browsing ? 'Consultar documentos' : 'Lançar documento'}</Button></DialogTrigger>
             <DialogContent className="sm:max-w-lg">
-                <DialogHeader><DialogTitle>Documentos do veículo no Drive</DialogTitle><DialogDescription>Selecione a placa, confirme a pasta em Operações e envie o documento.</DialogDescription></DialogHeader>
+                <DialogHeader><DialogTitle>Documentos do veículo no Drive</DialogTitle><DialogDescription>{browsing ? 'Consulte os documentos existentes por placa e pasta, com acesso autorizado do Google.' : 'Selecione a placa, confirme a pasta em Operações e envie o documento.'}</DialogDescription></DialogHeader>
                 <ol className="list-decimal pl-5 space-y-2 text-sm">
                     <li>Entre com uma conta autorizada do setor de Frotas.</li>
                     <li>No primeiro acesso, confira e autorize a integração no Google.</li>
                     <li>Escolha a placa. Se existir mais de uma pasta, confirme a correta.</li>
-                    <li>Escolha uma subpasta existente ou crie uma nova.</li>
-                    <li>Confira o destino e anexe um PDF, JPG ou PNG.</li>
+                    <li>{browsing ? 'Escolha a pasta do documento: CRLV, laudos, tacógrafo ou outra pasta existente.' : 'Escolha uma subpasta existente ou crie uma nova.'}</li>
+                    <li>{browsing ? 'Busque pelo nome e clique em Abrir documento. Para baixar, use a opção de download do Drive.' : 'Confira o destino e anexe um PDF, JPG ou PNG.'}</li>
                 </ol>
-                <p className="text-xs text-muted-foreground">O envio guarda o arquivo no Drive. Não altera datas ou status da planilha de documentação e não substitui arquivos existentes.</p>
+                <p className="text-xs text-muted-foreground">{browsing ? 'A consulta não altera arquivos nem libera acesso público. Você verá somente as pastas e documentos permitidos à sua conta.' : 'O envio guarda o arquivo no Drive. Não altera datas ou status da planilha de documentação e não substitui arquivos existentes.'}</p>
                 {status === 'loading' ? <p role="status" className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Verificando integração…</p>
                     : status !== 'ready' ? <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{status === 'error' ? 'Não foi possível verificar a integração. Tente abrir esta opção novamente.' : 'Ativação pendente: o envio de documentos ainda precisa ser publicado e autorizado na integração do Google. Nenhum arquivo será enviado enquanto isso.'}</p>
-                        : <Button asChild className="gap-2"><a href={`${DOCUMENT_PORTAL_URL || API_SERVER_URL}?action=documentPortal`} target="_blank" rel="noopener noreferrer">Selecionar placa e pasta no Google<ExternalLink className="h-4 w-4" /></a></Button>}
+                        : <Button asChild className="gap-2"><a href={`${DOCUMENT_PORTAL_URL || API_SERVER_URL}?action=documentPortal`} target="_blank" rel="noopener noreferrer">{browsing ? 'Consultar arquivos no Google' : 'Selecionar placa e pasta no Google'}<ExternalLink className="h-4 w-4" /></a></Button>}
             </DialogContent>
         </Dialog>
     );

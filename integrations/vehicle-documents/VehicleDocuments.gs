@@ -124,6 +124,30 @@ function getFleetDocumentDestinations(plate, vehicleFolderId) {
   return fleetDocumentSubfolders_(fleetDocumentVehicleFolder_(plate, vehicleFolderId));
 }
 
+function getFleetDocumentFiles(plate, vehicleFolderId, folderId) {
+  fleetDocumentUser_();
+  const vehicle = fleetDocumentVehicleFolder_(plate, vehicleFolderId);
+  const destination = fleetDocumentSubfolders_(vehicle).find(function (row) { return row.id === String(folderId); });
+  if (!destination) throw new Error('Pasta fora do veículo selecionado.');
+  const iterator = DriveApp.getFolderById(destination.id).getFiles();
+  const files = [];
+  const seen = {};
+  let inspected = 0;
+  // Metadata only, bounded work. Google remains responsible for opening or
+  // downloading each file with the visitor's existing Drive permissions.
+  while (iterator.hasNext() && inspected < 200) {
+    const file = iterator.next();
+    inspected++;
+    if (file.isTrashed() || seen[file.getId()]) continue;
+    seen[file.getId()] = true;
+    files.push({ id: file.getId(), name: file.getName(), url: file.getUrl(),
+      mimeType: file.getMimeType(), size: file.getSize(), updatedAt: file.getLastUpdated().toISOString() });
+  }
+  return { files: files.sort(function (a, b) { return a.name.localeCompare(b.name, 'pt-BR'); }),
+    path: destination.path, folderUrl: 'https://drive.google.com/drive/folders/' + destination.id,
+    truncated: iterator.hasNext() };
+}
+
 function fleetDocumentSafeName_(value) {
   const name = String(value || '').trim();
   if (!name || name.length > 120 || /[\\/<>\x00-\x1f]/.test(name) || name === '.' || name === '..') throw new Error('Nome inválido. Use até 120 caracteres, sem barras.');

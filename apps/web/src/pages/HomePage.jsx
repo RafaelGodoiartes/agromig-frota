@@ -809,6 +809,7 @@ export default function HomePage() {
                         <KmSemanalDialog data={data} onSaved={refresh} />
                         <VeiculoDialog data={data} onSaved={refresh} />
                         <VehicleDocumentDialog />
+                        <VehicleDocumentDialog mode="browse" />
                     </div>
                 </section>
                 {/* Source notice */}
@@ -2086,6 +2087,10 @@ function DocumentacaoView({ data, filters, search }) {
 
     return (
         <section className="flex flex-col gap-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">Consulte os arquivos do veículo nas pastas de Operações.</p>
+                <VehicleDocumentDialog mode="browse" />
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <KpiCard label="OK" value={NUM(counts.OK)} accent="text-green-600" active={statusFilter === 'OK'} onClick={() => setStatusFilter((value) => value === 'OK' ? 'all' : 'OK')} />
                 <KpiCard label="A vencer" value={NUM(counts['A vencer'])} accent="text-amber-600" active={statusFilter === 'A vencer'} onClick={() => setStatusFilter((value) => value === 'A vencer' ? 'all' : 'A vencer')} />

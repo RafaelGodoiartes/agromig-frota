@@ -5,6 +5,9 @@
   <style>
     *{box-sizing:border-box}body{font:15px system-ui,sans-serif;color:#183e29;background:#f7fbf8;margin:0;padding:24px}main{max-width:760px;margin:auto;background:white;border:1px solid #cfe8d5;border-radius:16px;padding:24px}h1{color:#1f7a46;font-size:24px;margin-top:0}p{line-height:1.5}label{display:block;margin:18px 0 6px;font-weight:600}select,input,button{font:inherit;width:100%;padding:12px;border:1px solid #abcdb6;border-radius:8px;background:white;color:#183e29}button{cursor:pointer;margin-top:12px;background:#1f7a46;color:white;font-weight:600}button:disabled{opacity:.55;cursor:default}.note{font-size:13px;color:#53715e}#message{white-space:pre-wrap;padding:12px;background:#f2f8f4;border-radius:8px}#message.error{color:#9a3412;background:#fff7ed}a{color:#1f7a46}fieldset{border:0;padding:0;margin:0}@media(max-width:480px){body{padding:10px}main{padding:16px}h1{font-size:21px}}
   </style>
+  <style>
+    #documents{margin:22px 0;padding:16px;border:1px solid #cfe8d5;border-radius:10px;background:#f7fbf8}#documents h2{font-size:18px;margin:0}.file-card{margin-top:12px;padding:14px;background:white;border:1px solid #dce8df;border-radius:8px;overflow-wrap:anywhere}.file-card strong{display:block;margin-bottom:6px}.file-card a{display:inline-block;margin-top:8px;font-weight:600}#folder-link{display:inline-block;margin:10px 0}#files-message{margin:12px 0;font-size:13px}button.secondary{background:white;color:#1f7a46}[hidden]{display:none!important}
+  </style>
 </head>
 <body><main>
   <h1>AGROMIG · Documentos da Frota</h1>
@@ -13,7 +16,16 @@
     <fieldset id="controls">
       <label for="plate">Placa / equipamento</label><select id="plate" required><option value="">Carregando veículos…</option></select>
       <label for="vehicle-folder">Pasta do veículo em Operações</label><select id="vehicle-folder" required disabled><option value="">Selecione uma placa</option></select>
-      <label for="destination">Pasta de destino</label><select id="destination" required disabled><option value="">Selecione a pasta do veículo</option></select>
+      <label for="destination">Pasta para consultar / enviar</label><select id="destination" required disabled><option value="">Selecione a pasta do veículo</option></select>
+      <section id="documents" aria-labelledby="documents-title">
+        <h2 id="documents-title">Consultar documentos</h2>
+        <p class="note">Selecione uma pasta para listar os arquivos. Abra o documento no Drive para visualizar ou baixar, usando sua conta autorizada.</p>
+        <a id="folder-link" hidden target="_blank" rel="noopener noreferrer">Abrir pasta completa no Drive</a>
+        <label for="file-search">Buscar pelo nome do documento</label><input id="file-search" type="search" placeholder="Ex.: CRLV, tacógrafo, laudo…" disabled>
+        <button id="refresh-files" type="button" class="secondary" disabled>Atualizar documentos desta pasta</button>
+        <p id="files-message" role="status" aria-live="polite">Escolha a placa e a pasta para consultar.</p>
+        <div id="file-list"></div>
+      </section>
       <label for="new-folder">Criar uma nova subpasta (opcional)</label><input id="new-folder" maxlength="120" placeholder="Ex.: Certificado de tacógrafo">
       <button id="create-folder" type="button" disabled>Criar subpasta no veículo selecionado</button>
       <label for="file">Documento — PDF, JPG ou PNG (até 8 MB)</label><input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" required>
@@ -29,6 +41,10 @@
   let generation = 0;
   let destinations = [];
   let busy = false;
+  let files = [];
+  let filesLoading = false;
+  let filesGeneration = 0;
+  let filesTruncated = false;
   const message = (text, error = false) => { $('message').textContent = text; $('message').className = error ? 'error' : ''; };
   const call = (method, ...args) => new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[method](...args));
   function options(id, rows, prompt, key, label) {
@@ -39,8 +55,51 @@
   function ready() {
     $('send').disabled = busy || !$('plate').value || !$('vehicle-folder').value || !$('destination').value;
     $('create-folder').disabled = busy || !$('vehicle-folder').value;
+    $('refresh-files').disabled = busy || filesLoading || !$('destination').value;
   }
+  const searchKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  function resetFiles() {
+    filesGeneration++; files = []; filesLoading = false; filesTruncated = false;
+    $('file-list').replaceChildren(); $('file-search').value = ''; $('file-search').disabled = true;
+    $('folder-link').hidden = true; $('folder-link').removeAttribute('href');
+    $('files-message').textContent = 'Escolha a placa e a pasta para consultar.';
+  }
+  function renderFiles() {
+    const visible = files.filter((file) => searchKey(file.name).includes(searchKey($('file-search').value)));
+    $('file-list').replaceChildren();
+    visible.forEach((file) => {
+      const card = document.createElement('div'); card.className = 'file-card';
+      const title = document.createElement('strong'); title.textContent = file.name; card.appendChild(title);
+      const metadata = document.createElement('div'); metadata.className = 'note';
+      const date = new Date(file.updatedAt);
+      metadata.textContent = (Number.isFinite(date.getTime()) ? 'Atualizado em ' + date.toLocaleDateString('pt-BR') : '') + (file.size > 0 ? ' · ' + (file.size / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' KB' : '');
+      card.appendChild(metadata);
+      if (/^https:\/\/(drive|docs)\.google\.com\//.test(file.url)) {
+        const link = document.createElement('a'); link.href = file.url; link.textContent = 'Abrir documento'; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.appendChild(link);
+      }
+      $('file-list').appendChild(card);
+    });
+    $('files-message').textContent = (files.length ? visible.length + ' documento(s) exibido(s).' : 'Nenhum arquivo nesta pasta. Selecione outra subpasta.') + (files.length && !visible.length ? ' Nenhum nome corresponde à busca.' : '') + (filesTruncated ? ' A pasta possui mais arquivos; abra a pasta completa no Drive para ver todos.' : '');
+  }
+  async function loadFiles() {
+    const current = ++filesGeneration;
+    files = []; $('file-list').replaceChildren(); $('file-search').disabled = true;
+    $('folder-link').hidden = true; $('folder-link').removeAttribute('href');
+    if (!$('destination').value) { resetFiles(); ready(); return; }
+    filesLoading = true; ready(); $('files-message').textContent = 'Carregando documentos…';
+    try {
+      const result = await call('getFleetDocumentFiles', $('plate').value, $('vehicle-folder').value, $('destination').value);
+      if (current !== filesGeneration) return;
+      files = result.files; filesTruncated = result.truncated; $('file-search').disabled = false;
+      if (/^https:\/\/drive\.google\.com\/drive\/folders\//.test(result.folderUrl)) { $('folder-link').href = result.folderUrl; $('folder-link').hidden = false; }
+      renderFiles();
+    } catch (error) { if (current === filesGeneration) $('files-message').textContent = 'Não foi possível consultar os documentos: ' + error.message; }
+    finally { if (current === filesGeneration) { filesLoading = false; ready(); } }
+  }
+  $('file-search').addEventListener('input', renderFiles);
+  $('refresh-files').addEventListener('click', loadFiles);
   function resetDestination() {
+    resetFiles();
     destinations = [];
     options('destination', [], 'Selecione a pasta do veículo', 'id', (row) => row.path);
     $('result').replaceChildren(); ready();
@@ -74,6 +133,7 @@
   $('destination').addEventListener('change', () => {
     const row = destinations.find((row) => row.id === $('destination').value);
     if (row) message('Destino escolhido: ' + row.path);
+    loadFiles();
     ready();
   });
   $('create-folder').addEventListener('click', async () => {
@@ -86,6 +146,7 @@
       $('destination').value = folder.id;
       $('new-folder').value = '';
       message('Subpasta disponível. Confira o destino: ' + destinations.find((row) => row.id === folder.id).path);
+      await loadFiles();
     } catch (error) { message(error.message, true); }
     finally { busy = false; $('controls').disabled = false; ready(); }
   });
@@ -106,6 +167,7 @@
         const link = document.createElement('a'); link.href = result.url; link.textContent = 'Abrir documento no Drive'; link.target = '_blank'; link.rel = 'noopener noreferrer'; $('result').appendChild(link);
       }
       $('file').value = '';
+      await loadFiles();
     } catch (error) { message(error.message, true); }
     finally { busy = false; $('controls').disabled = false; ready(); }
   });

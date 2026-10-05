@@ -1,6 +1,6 @@
 # Portal de documentos da frota
 
-Portal publicado em 05/10/2026, versão 22, em uma implantação separada que exige
+Portal publicado em 05/10/2026, versão 23, em uma implantação separada que exige
 conta da organização Agromig e executa como o usuário visitante. A integração
 pública do dashboard e dos lançamentos não foi modificada.
 
@@ -12,12 +12,23 @@ possuir acesso às pastas no Drive; o portal não concede nem altera permissões
 URL publicada (configuração pública, não credencial):
 https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec?action=documentPortal
 
-Validação em 05/10/2026: 57 testes passaram, incluindo autorização, placas,
+Validação em 05/10/2026: 60 testes passaram, incluindo autorização, placas,
 destinos e upload com Drive/Sheets simulados. Após autorização Google, a conta
 Frota carregou o Cadastro e encontrou a LTU5A25 dentro de `03 - OPERAÇÃO`,
 com as subpastas reais de CRLV, tacógrafo e demais documentos. O botão publicado
 no dashboard aponta para o portal autenticado. Não foram criadas pastas nem
 enviados arquivos de teste ao Drive de produção.
+
+## Consulta dos documentos existentes
+
+Use **Consultar documentos** nos lançamentos ou na aba **Documentação** do
+dashboard. O portal lista os arquivos diretamente na pasta confirmada do veículo,
+com busca por nome, atualização da lista e links para abrir no Drive. O download
+é feito na interface do Google, respeitando as permissões da conta visitante.
+Não há proxy público de arquivos, mudança de compartilhamento ou leitura de
+conteúdo binário pelo dashboard. A consulta está limitada a 200 arquivos por
+pasta; se houver mais, a tela informa isso e oferece o acesso à pasta completa.
+Arquivos em subpastas aparecem após selecionar a respectiva subpasta.
 
 ## Instalação sem substituir o conector existente
 

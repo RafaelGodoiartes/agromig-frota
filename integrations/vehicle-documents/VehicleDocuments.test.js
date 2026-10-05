@@ -10,6 +10,7 @@ function fixture(email = 'allowed@example.com', allow = 'allowed@example.com') {
     let filesCreated = 0;
     const folder = (id, name, children = []) => {
         const item = { getId: () => id, getName: () => name, isTrashed: () => false,
+            files: [], getFiles: () => iterator(item.files),
             getFolders: () => iterator(children),
             getFoldersByName: (value) => iterator(children.filter((child) => child.getName() === value)),
             createFolder: (name) => { const result = folder(`new-${children.length}`, name); children.push(result); return result; },
@@ -39,6 +40,7 @@ test('portal exige identidade Google autorizada; e-mail postado não autoriza', 
         const { context } = fixture(email, allow);
         assert.throws(() => context.getFleetDocumentVehicles(), /Acesso restrito/);
         assert.throws(() => context.uploadFleetDocument({ email: 'allowed@example.com' }), /Acesso restrito/);
+        assert.throws(() => context.getFleetDocumentFiles('LTU5A25', 'truck', 'crlv'), /Acesso restrito/);
     }
 });
 
@@ -85,4 +87,69 @@ test('rejeita arquivo vazio, tipo não permitido e conteúdo base64 inválido', 
     const input = { plate: 'LTU5A25', vehicleFolderId: 'truck', folderId: 'crlv' };
     for (const file of [{ name: 'evil.html', mimeType: 'text/html', base64: 'AA==' }, { name: 'empty.pdf', mimeType: 'application/pdf', base64: '' }, { name: 'a.pdf', mimeType: 'application/pdf', base64: 'not base64' }]) assert.throws(() => context.uploadFleetDocument({ ...input, file }));
     assert.equal(filesCreated(), 0);
+});
+
+const documentFile = (id, name, trashed = false) => ({
+    getId: () => id, getName: () => name, isTrashed: () => trashed,
+    getUrl: () => `https://drive.google.com/file/d/${id}/view`,
+    getMimeType: () => 'application/pdf', getSize: () => 2048,
+    getLastUpdated: () => new Date('2026-10-05T12:00:00Z'),
+});
+
+test('consulta retorna apenas metadados do destino e exclui lixo/duplicados', () => {
+    const { context, folders, filesCreated } = fixture();
+    folders.get('crlv').files.push(documentFile('b', 'Tacógrafo.pdf'), documentFile('a', 'CRLV.pdf'), documentFile('a', 'CRLV.pdf'), documentFile('trash', 'Excluído.pdf', true));
+    folders.get('outside').files.push(documentFile('secret', 'Outro veículo.pdf'));
+    const result = context.getFleetDocumentFiles('LTU5A25', 'truck', 'crlv');
+    assert.equal(result.files.length, 2);
+    assert.equal(result.files[0].name, 'CRLV.pdf');
+    assert.equal(result.files[0].size, 2048);
+    assert.equal(result.files[0].updatedAt, '2026-10-05T12:00:00.000Z');
+    assert.equal(result.folderUrl, 'https://drive.google.com/drive/folders/crlv');
+    assert.equal(result.truncated, false);
+    assert.equal(filesCreated(), 0);
+    assert.throws(() => context.getFleetDocumentFiles('LTU5A25', 'truck', 'outside'), /fora do veículo/);
+    assert.throws(() => context.getFleetDocumentFiles('LTU5A25', 'outside', 'outside'), /não corresponde/);
+    assert.throws(() => context.getFleetDocumentFiles('AAA1B23', 'truck', 'crlv'), /Cadastro/);
+});
+
+test('consulta vazia e limite de arquivos são explícitos, sem varrer todo o Drive', () => {
+    const { context, folders } = fixture();
+    assert.equal(context.getFleetDocumentFiles('LTU5A25', 'truck', 'crlv').files.length, 0);
+    folders.get('crlv').files.push(...Array.from({ length: 201 }, (_, i) => documentFile(`f${i}`, `${i}.pdf`)));
+    const result = context.getFleetDocumentFiles('LTU5A25', 'truck', 'crlv');
+    assert.equal(result.files.length, 200);
+    assert.equal(result.truncated, true);
+});
+
+test('portal descarta consulta antiga quando placa ou pasta muda', async () => {
+    const html = fs.readFileSync(new URL('./VehicleDocumentForm.html', import.meta.url), 'utf8');
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    class Element {
+        constructor() { this.value = ''; this.children = []; this.events = {}; }
+        addEventListener(name, callback) { this.events[name] = callback; }
+        replaceChildren(...nodes) { this.children = nodes; }
+        appendChild(node) { this.children.push(node); }
+        removeAttribute(name) { delete this[name]; }
+    }
+    const elements = new Map(); const pending = [];
+    const runner = () => {
+        let success;
+        return { withSuccessHandler(callback) { success = callback; return this; }, withFailureHandler() {
+            return new Proxy({}, { get: (_, method) => () => {
+                if (method === 'getFleetDocumentVehicles') success([]);
+                else pending.push(success);
+            } });
+        } };
+    };
+    const context = { document: { getElementById(id) { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); }, createElement: () => new Element() }, Option: class {}, google: { script: { get run() { return runner(); } } } };
+    vm.createContext(context); vm.runInContext(script, context);
+    await Promise.resolve();
+    elements.get('plate').value = 'LTU5A25'; elements.get('vehicle-folder').value = 'truck'; elements.get('destination').value = 'crlv';
+    const oldRequest = context.loadFiles();
+    context.resetDestination();
+    pending.shift()({ files: [documentFile('old', 'old.pdf')], folderUrl: 'https://drive.google.com/drive/folders/crlv' });
+    await oldRequest;
+    assert.equal(elements.get('file-list').children.length, 0);
+    assert.equal(elements.get('folder-link').hidden, true);
 });
