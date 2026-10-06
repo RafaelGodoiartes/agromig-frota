@@ -10,7 +10,7 @@ const fields = [
     ['plate', 'Placa', 'text', 10, 'Ex.: TCP6B43'], ['model', 'Modelo do veículo', 'text', 60, 'Ex.: STRADA'],
     ['identifier', 'Identificação AGR', 'text', 18, 'Ex.: AGR-038'], ['releasedBy', 'Liberado por', 'text', 60, 'Nome do responsável'],
     ['issueDate', 'Data de emissão da TAG', 'text', 10, 'DD/MM/AAAA'], ['lastReviewDate', 'Data da última revisão', 'text', 10, 'DD/MM/AAAA'],
-    ['lastReviewKm', 'KM da última revisão', 'text', 15, 'Ex.: 30.000,5'], ['nextReviewKm', 'KM da próxima revisão / renovação da TAG', 'text', 15, 'Ex.: 40.000'],
+    ['lastReviewKm', 'KM da última revisão', 'text', 24, 'Ex.: 30.000 km'], ['nextReviewKm', 'KM da próxima revisão / renovação da TAG', 'text', 24, 'Ex.: 40.000 km'],
 ];
 
 export default function VehicleTagDialog() {
@@ -53,7 +53,7 @@ export default function VehicleTagDialog() {
                         <div><Label htmlFor="tag-company">Empresa na TAG</Label><Input id="tag-company" value={form.company} maxLength={80} onChange={(e) => update('company', e.target.value)} aria-invalid={!!errors.company} />{errors.company && <p className="text-sm text-red-700">{errors.company}</p>}</div>
                         <div><Label htmlFor="tag-type">Tipo de veículo</Label><select id="tag-type" value={form.vehicleType} onChange={(e) => update('vehicleType', e.target.value)} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="veiculo">Veículo</option><option value="caminhao">Caminhão</option></select></div>
                         <div className="grid gap-4 sm:grid-cols-2">
-                            {fields.map(([key, label, type, maxLength, placeholder]) => <div key={key} className="min-w-0"><Label htmlFor={`tag-${key}`}>{label}</Label><Input id={`tag-${key}`} type={type} maxLength={maxLength} placeholder={placeholder} inputMode={key.endsWith('Km') ? 'decimal' : undefined} value={form[key]} onChange={(e) => update(key, e.target.value)} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `tag-error-${key}` : undefined} />{errors[key] && <p id={`tag-error-${key}`} className="text-sm text-red-700">{errors[key]}</p>}</div>)}
+                            {fields.map(([key, label, type, maxLength, placeholder]) => <div key={key} className="min-w-0"><Label htmlFor={`tag-${key}`}>{label}</Label><Input id={`tag-${key}`} type={type} maxLength={maxLength} placeholder={placeholder} inputMode={key.endsWith('Km') ? 'decimal' : undefined} value={form[key]} onChange={(e) => update(key, e.target.value)} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `tag-error-${key}` : undefined} />{key.endsWith('Km') && <p className="mt-1 text-xs text-muted-foreground">Aceita número com ou sem “km”, pontos, vírgula e espaços.</p>}{errors[key] && <p id={`tag-error-${key}`} className="text-sm text-red-700">{errors[key]}</p>}</div>)}
                         </div>
                         <div><Label htmlFor="tag-lastReview">Serviços realizados na última revisão (opcional)</Label><Input id="tag-lastReview" value={form.lastReview} maxLength={100} onChange={(e) => update('lastReview', e.target.value)} placeholder="Descreva somente o que foi realizado" /></div>
                         <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-950"><strong>Na próxima revisão</strong><p>Revisão preventiva e troca do óleo.</p>{form.vehicleType === 'caminhao' && <p>Troca do fluido de freio (caminhão).</p>}</div>

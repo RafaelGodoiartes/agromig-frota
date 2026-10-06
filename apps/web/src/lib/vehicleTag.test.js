@@ -27,6 +27,21 @@ test('datas, KM fracionado e sequência não permitem revisão inválida', () =>
     for (const changes of [{ issueDate: '2026-13-01' }, { lastReviewDate: '2026-10-07' }, { lastReviewKm: '-1' }, { nextReviewKm: '1' }, { nextReviewKm: '29160.5' }, { plate: 'INVALIDA' }]) assert.equal(validateVehicleTag({ ...sampleTag(), ...changes }).valid, false);
 });
 
+test('campos de revisão aceitam km digitado e espaços sem esconder valores inválidos', () => {
+    for (const value of ['162000 km', '162000km', '162.000 KM', '162 000 Km', ' 162\u00a0000 km ']) assert.equal(tagKm(value), 162000);
+    assert.equal(tagKm('172.000,50 km'), 172000.5);
+    assert.equal(tagKm('0 KM'), 0);
+    for (const value of ['km', 'km162000', '162000 horas', '162000kmkm', 'abc162000 km', '-162000 km', '1.2.3,4 km', '1,2,3 km', '100000000 km']) assert.equal(tagKm(value), null);
+    const input = { ...sampleTag(), lastReviewKm: '162000 km', nextReviewKm: '172000 km' };
+    const validation = validateVehicleTag(input);
+    assert.equal(validation.valid, true); assert.equal(validation.tag.lastReviewKm, 162000); assert.equal(validation.tag.nextReviewKm, 172000);
+    const drawing = vehicleTagDrawing(input);
+    assert.equal(drawing.back.some(c => c.text === 'Última revisão: 162.000 KM'), true);
+    assert.equal(drawing.back.some(c => c.text === '172.000 KM'), true);
+    assert.equal(validateVehicleTag({ ...input, nextReviewKm: '150000 km' }).valid, false);
+    assert.equal(validateVehicleTag({ ...input, nextReviewKm: '162000 km' }).valid, false);
+});
+
 test('fluido de freio aparece apenas no caminhão e não usa dados da planilha', () => {
     assert.equal(tagServices('veiculo').some(x => x.includes('freio')), false);
     assert.equal(tagServices('caminhao').some(x => x.includes('freio')), true);

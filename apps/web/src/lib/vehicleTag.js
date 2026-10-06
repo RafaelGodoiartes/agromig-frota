@@ -8,8 +8,11 @@ export const emptyVehicleTag = () => ({
 });
 
 export function tagKm(value) {
-    const raw = String(value ?? '').trim();
+    const raw = String(value ?? '').trim().replace(/\s*km$/i, '').replace(/\s/g, '');
     if (!raw) return null;
+    // Keep numeric validation strict: accept the unit only at the end, never
+    // strip arbitrary letters or silently accept broken thousands separators.
+    if (raw.includes(',') && !/^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{1,2}$/.test(raw)) return null;
     const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.')
         : /^\d{1,3}(?:\.\d{3})+$/.test(raw) ? raw.replace(/\./g, '') : raw;
     if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;

@@ -12,7 +12,8 @@ O preenchimento permanece apenas enquanto a página estiver aberta.
 - Próxima revisão: KM informado manualmente, também usado na renovação da TAG.
 - Próximos serviços: revisão preventiva e troca do óleo; caminhão inclui fluido
   de freio. O tipo de veículo também é escolhido manualmente.
-- Datas: DD/MM/AAAA. KM aceita inteiros, separadores brasileiros e frações.
+- Datas: DD/MM/AAAA. KM aceita inteiros, separadores brasileiros, frações,
+  espaços e sufixo `km` sem diferenciar maiúsculas (ex.: `162000 km`).
 - Link opcional: pasta HTTPS do `drive.google.com`, digitada pelo usuário.
   QR Code gerado localmente com esse link; não reaproveita o QR do exemplo.
   O código não muda as permissões de acesso do Drive.
