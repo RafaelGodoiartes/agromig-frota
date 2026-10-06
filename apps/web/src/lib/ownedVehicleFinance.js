@@ -11,6 +11,9 @@ export const OWNED_FLEET_INSURANCE = Object.freeze({
     lastCents: 417721,
 });
 
+// Payment confirmations come from the fleet manager, never from due dates.
+export const OWNED_FLEET_INSURANCE_PAID = Object.freeze([1, 2, 3]);
+
 // Keep amounts in cents; blank/invalid values are not a healthy zero.
 export function moneyCents(value) {
     if (value === null || value === undefined || text(value) === '') return null;

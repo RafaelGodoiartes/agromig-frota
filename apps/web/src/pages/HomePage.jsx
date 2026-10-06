@@ -38,7 +38,7 @@ import {
     buildRevenueRows,
     summarizeByEquipment,
 } from '@/lib/faturamento';
-import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance } from '@/lib/ownedVehicleFinance';
+import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance, OWNED_FLEET_INSURANCE_PAID } from '@/lib/ownedVehicleFinance';
 import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanceParts';
 import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
 import VehicleTagDialog from '@/components/VehicleTagDialog';
@@ -1612,7 +1612,7 @@ function OwnedVehiclesFinanceView({ data, period }) {
     const ready = Array.isArray(data.cadastroFinanceiro);
     const summary = useMemo(() => summarizeOwnedVehicles(data.cadastroFinanceiro || []), [data.cadastroFinanceiro]);
     const schedule = useMemo(() => insuranceSchedule(), []);
-    const insurance = useMemo(() => summarizeInsurance(month, null, schedule), [month, schedule]);
+    const insurance = useMemo(() => summarizeInsurance(month, OWNED_FLEET_INSURANCE_PAID, schedule), [month, schedule]);
     const variableExpense = useMemo(() => summarizeOwnedMaintenance(data.manutencao, summary.rows, month), [data.manutencao, summary.rows, month]);
     const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
     const complete = ready && !summary.missingValues.length && !summary.conflicts.length;
@@ -1658,10 +1658,10 @@ function OwnedVehiclesFinanceView({ data, period }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                     <KpiCard label="Total contratado" value={formatFinanceBRL(insurance.totalCents)} sub="10 parcelas · 9 de R$ 4.177,19 e a última de R$ 4.177,21" />
                     <KpiCard label="Parcela no mês selecionado" value={validMonth ? insurance.installment ? `${insurance.installment.number} de ${schedule.length}` : 'Nenhuma' : '—'} sub={validMonth ? formatFinanceBRL(insurance.expenseCents) : 'Selecione um mês'} />
-                    <KpiCard label="Total já pago" value={formatFinanceBRL(insurance.paidCents)} sub="A apólice não comprova pagamentos" />
-                    <KpiCard label="Saldo restante do seguro" value={formatFinanceBRL(insurance.balanceCents)} sub="Depende da confirmação das parcelas pagas" />
+                    <KpiCard label="Total já pago" value={formatFinanceBRL(insurance.paidCents)} sub="3 de 10 parcelas pagas · confirmado pelo gestor" />
+                    <KpiCard label="Saldo restante do seguro" value={formatFinanceBRL(insurance.balanceCents)} sub="7 parcelas restantes · sem presumir novos pagamentos" />
                 </div>
-                <details className="rounded-lg border bg-white p-3"><summary className="cursor-pointer text-sm font-medium text-[#1f6b3d]">Consultar as 10 parcelas</summary><div className="mt-3"><ScrollTable head={<>{['Parcela', 'Vencimento', 'Valor', 'Pagamento'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{schedule.map((row) => <TableRow key={row.number} className={row.number === insurance.installment?.number ? 'bg-green-50' : ''}><TableCell>{row.number}/10</TableCell><TableCell className="whitespace-nowrap">{formatDate(row.dueDate)}</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(row.amountCents)}</TableCell><TableCell>Não informado</TableCell></TableRow>)}<TableRow className="font-semibold bg-muted/40"><TableCell colSpan={2}>Total contratado</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(insurance.totalCents)}</TableCell><TableCell>—</TableCell></TableRow></ScrollTable></div></details>
+                <details className="rounded-lg border bg-white p-3"><summary className="cursor-pointer text-sm font-medium text-[#1f6b3d]">Consultar as 10 parcelas</summary><div className="mt-3"><ScrollTable head={<>{['Parcela', 'Vencimento', 'Valor', 'Pagamento'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{schedule.map((row) => <TableRow key={row.number} className={row.number === insurance.installment?.number ? 'bg-green-50' : ''}><TableCell>{row.number}/10</TableCell><TableCell className="whitespace-nowrap">{formatDate(row.dueDate)}</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(row.amountCents)}</TableCell><TableCell>{OWNED_FLEET_INSURANCE_PAID.includes(row.number) ? 'Paga' : 'Pagamento não confirmado'}</TableCell></TableRow>)}<TableRow className="font-semibold bg-muted/40"><TableCell colSpan={2}>Total contratado</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(insurance.totalCents)}</TableCell><TableCell>—</TableCell></TableRow></ScrollTable></div></details>
             </div>
         </Card>
     );

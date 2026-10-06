@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatFinanceBRL, insuranceSchedule, moneyCents, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance } from './ownedVehicleFinance.js';
+import { formatFinanceBRL, insuranceSchedule, moneyCents, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance, OWNED_FLEET_INSURANCE_PAID } from './ownedVehicleFinance.js';
 
 const vehicle = (placa, tipoPosse, aluguelMensal) => ({ placa, tipoPosse, aluguelMensal });
 
@@ -89,6 +89,17 @@ test('formata todos os valores em reais com duas casas decimais', () => {
     assert.equal(normalized(4177192), 'R$ 41.771,92');
     assert.equal(normalized(0), 'R$ 0,00');
     assert.equal(normalized(null), 'Não informado');
+});
+
+test('três primeiras parcelas confirmadas somam R$ 12.531,57 e deixam R$ 29.240,35', () => {
+    assert.deepEqual(OWNED_FLEET_INSURANCE_PAID, [1, 2, 3]);
+    for (const month of ['2026-08', '2026-10', '2027-05']) {
+        const result = summarizeInsurance(month, OWNED_FLEET_INSURANCE_PAID);
+        assert.equal(result.paidCents, 1253157);
+        assert.equal(result.balanceCents, 2924035);
+        assert.equal(result.paidCents + result.balanceCents, result.totalCents);
+    }
+    assert.equal(summarizeInsurance('2026-10', OWNED_FLEET_INSURANCE_PAID).expenseCents, 417719);
 });
 
 test('despesa variável mensal inclui somente manutenção dos próprios, na competência escolhida', () => {
