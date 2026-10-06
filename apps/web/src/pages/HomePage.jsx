@@ -42,6 +42,7 @@ import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwned
 import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanceParts';
 import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
 import VehicleTagDialog from '@/components/VehicleTagDialog';
+import { launchPlateKey, mergeLaunchVehicles, registrationVehicle, selectRegisteredVehicle } from '@/lib/launchVehicles';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -206,14 +207,16 @@ function LancamentoDialog({ type, data, onSaved }) {
     const [message, setMessage] = useState('');
     const [files, setFiles] = useState([]);
     const [vehicleSearch, setVehicleSearch] = useState('');
+    const [newVehicleOpen, setNewVehicleOpen] = useState(false);
+    const [registeredVehicles, setRegisteredVehicles] = useState([]);
     const [form, setForm] = useState({ data: today(), placa: '', projeto: '', motorista: '', categoria: 'Combustível', item: 'Diesel S-10', posto: '', litros: '', precoLitro: '', km: '', observacoes: '', tipo: 'Preventiva', status: 'AGENDADO', dataPrevista: today(), dataConclusao: '', descricao: '', peca: '', valor: '', responsavel: '', fornecedor: '', folderUrl: '', pin: '' });
     const [extraStations, setExtraStations] = useState(() => (typeof window === 'undefined' ? [] : readLocalStations()));
     const [postoDialogOpen, setPostoDialogOpen] = useState(false);
     const [postoSaving, setPostoSaving] = useState(false);
     const [postoMessage, setPostoMessage] = useState('');
     const [newPosto, setNewPosto] = useState({ nome: '', cnpj: '', cidade: '', observacoes: '' });
-    const masterVehicles = data?.veiculos || [];
-    const vehicles = isFuel ? (data?.veiculosAbastecimento || []) : masterVehicles;
+    const masterVehicles = useMemo(() => mergeLaunchVehicles(data?.veiculos, registeredVehicles), [data?.veiculos, registeredVehicles]);
+    const vehicles = useMemo(() => isFuel ? mergeLaunchVehicles(data?.veiculosAbastecimento, masterVehicles) : masterVehicles, [isFuel, data?.veiculosAbastecimento, masterVehicles]);
     const filteredVehicles = useMemo(() => {
         const query = searchKey(vehicleSearch);
         if (!query) return vehicles;
@@ -227,6 +230,7 @@ function LancamentoDialog({ type, data, onSaved }) {
             ? [
                 ...(data?.projetosAbastecimento || []),
                 ...(data?.abastecimento || []).map((row) => row?.projeto),
+                ...masterVehicles.map((vehicle) => vehicle.projeto),
             ]
             : masterVehicles.map((vehicle) => vehicle.projeto);
         const unique = new Map();
@@ -264,8 +268,8 @@ function LancamentoDialog({ type, data, onSaved }) {
     }, [form.litros, form.valor]);
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
     const selectVehicle = (placa) => {
-        const vehicle = masterVehicles.find((v) => v.placa === placa)
-            || (data?.veiculosAbastecimento || []).find((v) => v.placa === placa);
+        const vehicle = masterVehicles.find((v) => launchPlateKey(v.placa) === launchPlateKey(placa))
+            || vehicles.find((v) => launchPlateKey(v.placa) === launchPlateKey(placa));
         const controlVehicle = (data?.veiculos || []).find((v) => v.placa === placa);
         const utilization = (data?.utilizacao || []).find((v) => v.placa === placa);
         const weekly = (data?.kmRodado || []).find((v) => v.placa === placa);
@@ -278,6 +282,13 @@ function LancamentoDialog({ type, data, onSaved }) {
             motorista: isFuel ? (driver || f.motorista) : f.motorista,
             folderUrl: vehicle?.pastaEvidencias || f.folderUrl,
         }));
+    };
+    const vehicleRegistered = (vehicle) => {
+        setRegisteredVehicles((current) => mergeLaunchVehicles(current, [vehicle]));
+        setVehicleSearch('');
+        setForm((current) => selectRegisteredVehicle(current, vehicle));
+        setNewVehicleOpen(false);
+        setMessage(`Placa ${vehicle.placa} cadastrada e selecionada. Confira os dados para concluir o lançamento.`);
     };
     const registerPosto = async (event) => {
         event.preventDefault();
@@ -322,6 +333,9 @@ function LancamentoDialog({ type, data, onSaved }) {
             const payload = isFuel
                 ? { data: form.data, placa: form.placa, projeto: form.projeto, motorista: form.motorista, categoria: form.categoria, item: form.item, posto: form.posto, litros: form.litros, valor: form.valor, precoLitro: fuelUnitPrice, km: form.km, observacoes: form.observacoes, pin: form.pin }
                 : { dataChamado: form.data, placa: form.placa, projeto: form.projeto, tipo: form.tipo, status: form.status, dataPrevista: form.dataPrevista, dataConclusao: form.dataConclusao, descricao: form.descricao, peca: form.peca, valor: form.valor, km: form.km, responsavel: form.responsavel, fornecedor: form.fornecedor, folderUrl: form.folderUrl, files: attachments, pin: form.pin };
+            const selected = masterVehicles.find((vehicle) => launchPlateKey(vehicle.placa) === launchPlateKey(form.placa)) || vehicles.find((vehicle) => launchPlateKey(vehicle.placa) === launchPlateKey(form.placa));
+            if (!selected) throw new Error('Selecione uma placa cadastrada ou cadastre a nova placa antes de lançar.');
+            Object.assign(payload, { veiculo: selected.veiculo, unidade: selected.unidade || 'KM', tipoPosse: selected.tipoPosse || selected.propriedade, pastaEvidencias: selected.pastaEvidencias });
             const response = await apiServerClient.fetch(`/fleet/${type}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.message || 'Não foi possível salvar o lançamento.');
@@ -340,7 +354,7 @@ function LancamentoDialog({ type, data, onSaved }) {
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button className="gap-2" variant={isFuel ? 'default' : 'outline'}>{isFuel ? <Fuel className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}Novo {isFuel ? 'abastecimento' : 'lançamento de manutenção'}</Button></DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-                <DialogHeader><DialogTitle>{isFuel ? 'Lançar abastecimento' : 'Lançar manutenção'}</DialogTitle><DialogDescription>{isFuel ? 'Placas e projetos são carregados da aba “Veículos” da planilha de abastecimento.' : 'Os dados serão conferidos com o cadastro de frota antes de alimentar a planilha.'}</DialogDescription></DialogHeader>
+                <DialogHeader><DialogTitle>{isFuel ? 'Lançar abastecimento' : 'Lançar manutenção'}</DialogTitle><DialogDescription>{isFuel ? 'Placas da planilha de abastecimento e do cadastro da frota. Cadastre novas placas sem sair deste lançamento.' : 'Os dados serão conferidos com o cadastro de frota. Você pode cadastrar uma nova placa aqui.'}</DialogDescription></DialogHeader>
                 {!isFuel && scheduledPending.length > 0 && (
                     <Alert className="border-amber-300 bg-amber-50 text-amber-950">
                         <CalendarDays className="h-4 w-4" />
@@ -366,6 +380,7 @@ function LancamentoDialog({ type, data, onSaved }) {
                     </div>
                     <Field label={isFuel ? 'Data' : 'Data do chamado'}><Input type="date" value={form.data} onChange={(e) => set('data', isFuel ? normalizeFuelDate(e.target.value) : e.target.value)} required /></Field>
                     <Field label="Placa / veículo"><Select value={form.placa} onValueChange={selectVehicle} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{filteredVehicles.map((v) => <SelectItem key={v.placa} value={v.placa}>{v.placa} · {v.veiculo}</SelectItem>)}</SelectContent></Select></Field>
+                    <div className="sm:col-span-2"><Button type="button" variant="outline" className="gap-2" disabled={saving} onClick={() => setNewVehicleOpen(true)}><Plus className="h-4 w-4" />Cadastrar nova placa</Button><p className="mt-1 text-xs text-muted-foreground">A placa será gravada no Cadastro de Veículos e ficará disponível para manutenção e abastecimento.</p></div>
                     <Field label="Projeto"><Select value={form.projeto} onValueChange={(v) => set('projeto', v)} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
                     <Field label="KM / horímetro"><Input inputMode="decimal" value={form.km} onChange={(e) => set('km', e.target.value)} /></Field>
                     {isFuel ? <>
@@ -413,13 +428,16 @@ function LancamentoDialog({ type, data, onSaved }) {
                     
                     <div className="sm:col-span-2 flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{message}</p><Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar na planilha</Button></div>
                 </form>
+                <VeiculoDialog data={{ ...data, veiculos: masterVehicles }} onSaved={onSaved} onRegistered={vehicleRegistered} open={newVehicleOpen} onOpenChange={setNewVehicleOpen} hideTrigger />
             </DialogContent>
         </Dialog>
     );
 }
 
-function VeiculoDialog({ data, onSaved }) {
-    const [open, setOpen] = useState(false);
+function VeiculoDialog({ data, onSaved, onRegistered, open: controlledOpen, onOpenChange, hideTrigger = false }) {
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = controlledOpen ?? internalOpen;
+    const setOpen = onOpenChange || setInternalOpen;
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
     const [search, setSearch] = useState('');
@@ -431,14 +449,18 @@ function VeiculoDialog({ data, onSaved }) {
     }, [data, search]);
     const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
     const submit = async (event) => {
-        event.preventDefault(); setSaving(true); setMessage('');
+        event.preventDefault(); event.stopPropagation(); setSaving(true); setMessage('');
         try {
-            const response = await apiServerClient.fetch('/fleet/veiculo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+            const vehicle = registrationVehicle(form);
+            if (!vehicle.placa || !vehicle.veiculo || !vehicle.projeto) throw new Error('Informe placa/identificação, veículo/modelo e projeto.');
+            if ((data?.veiculos || []).some((current) => launchPlateKey(current.placa) === launchPlateKey(vehicle.placa))) throw new Error('Esta placa já está no Cadastro de Veículos. Selecione o veículo existente.');
+            const response = await apiServerClient.fetch('/fleet/veiculo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, ...vehicle, folderUrl: form.folderUrl }) });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.message || 'Não foi possível cadastrar o veículo.');
             const successMessage = body.message || 'Veículo cadastrado na planilha.';
             setMessage(successMessage);
-            setTimeout(() => setOpen(false), 900);
+            if (onRegistered) { onRegistered(vehicle); setOpen(false); }
+            else setTimeout(() => setOpen(false), 900);
             try {
                 await onSaved?.();
             } catch (refreshError) {
@@ -448,7 +470,7 @@ function VeiculoDialog({ data, onSaved }) {
     };
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild><Button variant="outline" className="gap-2"><Truck className="h-4 w-4" />Cadastrar veículo</Button></DialogTrigger>
+            {!hideTrigger && <DialogTrigger asChild><Button variant="outline" className="gap-2"><Truck className="h-4 w-4" />Cadastrar veículo</Button></DialogTrigger>}
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader><DialogTitle>Cadastrar veículo</DialogTitle><DialogDescription>O cadastro será criado automaticamente na planilha de veículos.</DialogDescription></DialogHeader>
                 <div className="rounded-lg border border-border bg-muted/30 p-3">

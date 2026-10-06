@@ -1,6 +1,7 @@
 // The public dashboard is hosted on GitHub Pages. Its data/write backend is
 // the Google Apps Script Web App so the site no longer depends on Cloudflare.
 import { abastecimentoCategory } from './abastecimentoTypes.js';
+import { mergeLaunchVehicles, registeredVehicleMetadata, registrationVehicle } from './launchVehicles.js';
 
 export const API_SERVER_URL = import.meta.env?.VITE_API_BASE_URL
     || 'https://script.google.com/macros/s/AKfycbwC30lpHYigIiLK7Rz0Z3nP-5teqEXykCOkoZFLqLXgjfblaxj9cLTLJFOGUGD2-PKD/exec';
@@ -79,7 +80,7 @@ function commandForRoute(route, input) {
     }
     if (route === '/fleet/abastecimento') {
         const plate = text(input.placa).toUpperCase();
-        const vehicle = (data.veiculosAbastecimento || []).find((item) => item.placa === plate) || { placa: plate, veiculo: plate };
+        const vehicle = registeredVehicleMetadata(data, plate, input, true);
         const liters = num(input.litros);
         const suppliedTotal = num(input.valor);
         const legacyUnitPrice = num(input.precoLitro);
@@ -116,7 +117,7 @@ function commandForRoute(route, input) {
     }
     if (route === '/fleet/manutencao') {
         const plate = text(input.placa).toUpperCase();
-        const vehicle = (data.veiculos || []).find((item) => item.placa === plate) || { placa: plate, veiculo: plate };
+        const vehicle = registeredVehicleMetadata(data, plate, input);
         const nextId = Math.max(0, ...(data.manutencao || []).map((row) => Number(row.id) || 0)) + 1;
         const status = text(input.status).toUpperCase();
         const value = num(input.valor);
@@ -149,7 +150,9 @@ const apiServerClient = {
             body: JSON.stringify(command),
         });
         const result = await readResponse(response);
-        cachedData = null;
+        if (url === '/fleet/veiculo' && result.ok) {
+            cachedData = { ...(cachedData || {}), veiculos: mergeLaunchVehicles([registrationVehicle(input)], cachedData?.veiculos) };
+        } else cachedData = null;
         return result;
     },
 };
