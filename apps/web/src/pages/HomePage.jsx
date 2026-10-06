@@ -41,6 +41,7 @@ import {
 import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance } from '@/lib/ownedVehicleFinance';
 import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanceParts';
 import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
+import VehicleTagDialog from '@/components/VehicleTagDialog';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -810,6 +811,7 @@ export default function HomePage() {
                         <VeiculoDialog data={data} onSaved={refresh} />
                         <VehicleDocumentDialog />
                         <VehicleDocumentDialog mode="browse" />
+                        <VehicleTagDialog />
                     </div>
                 </section>
                 {/* Source notice */}
