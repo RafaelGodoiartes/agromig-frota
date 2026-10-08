@@ -3,6 +3,7 @@ import apiServerClient from '@/lib/apiServerClient';
 import { loadFaturamentoSources } from '@/lib/faturamentoSources';
 import { loadAbastecimentoSources } from '@/lib/abastecimentoSources';
 import { loadOwnedVehicleRegistry } from '@/lib/ownedVehicleFinanceSources';
+import { loadDocumentPayments } from '@/lib/documentPayments';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
 const VEHICLE_LIMITS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=1477905702&tq=select%20A%2CE%2CI';
@@ -69,6 +70,7 @@ export function useFleetData() {
     const financeRequestRef = useRef(0);
     const abastecimentoRequestRef = useRef(0);
     const ownedFinanceRequestRef = useRef(0);
+    const documentPaymentsRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
         if (loadingRef.current) return;
@@ -102,6 +104,7 @@ export function useFleetData() {
             const financeRequestId = ++financeRequestRef.current;
             const abastecimentoRequestId = ++abastecimentoRequestRef.current;
             const ownedFinanceRequestId = ++ownedFinanceRequestRef.current;
+            const documentPaymentsRequestId = ++documentPaymentsRequestRef.current;
             setData((current) => ({
                 ...enrichedJson,
                 viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
@@ -111,6 +114,9 @@ export function useFleetData() {
                 cadastroFinanceiro: current?.cadastroFinanceiro,
                 cadastroFinanceiroLoading: true,
                 cadastroFinanceiroError: null,
+                pagamentosDocumentacao: current?.pagamentosDocumentacao,
+                pagamentosDocumentacaoLoading: true,
+                pagamentosDocumentacaoError: null,
                 tiposAbastecimento: current?.tiposAbastecimento || ['Combustível', 'Graxa'],
                 itensAbastecimento: current?.itensAbastecimento || [],
                 outrosAbastecimentos: current?.outrosAbastecimentos || [],
@@ -152,6 +158,17 @@ export function useFleetData() {
                 .catch(() => setData((current) => (
                     current && ownedFinanceRequestRef.current === ownedFinanceRequestId
                         ? { ...current, cadastroFinanceiroLoading: false, cadastroFinanceiroError: 'Não foi possível atualizar os valores mensais do Cadastro. Os últimos dados carregados foram mantidos; clique em Atualizar para tentar novamente.' }
+                        : current
+                )));
+            loadDocumentPayments()
+                .then((payments) => setData((current) => (
+                    current && documentPaymentsRequestRef.current === documentPaymentsRequestId
+                        ? { ...current, pagamentosDocumentacao: payments, pagamentosDocumentacaoLoading: false, pagamentosDocumentacaoError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && documentPaymentsRequestRef.current === documentPaymentsRequestId
+                        ? { ...current, pagamentosDocumentacaoLoading: false, pagamentosDocumentacaoError: 'Não foi possível atualizar os pagamentos de documentação. Clique em Atualizar para tentar novamente.' }
                         : current
                 )));
             loadEpicollectChecklist()

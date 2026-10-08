@@ -30,6 +30,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ptBR } from 'date-fns/locale';
 import apiServerClient from '@/lib/apiServerClient';
 import { driverNameKey, summarizeChecklistDrivers } from '@/lib/checklistDrivers';
+import { summarizeDocumentPayments } from '@/lib/documentPayments';
 import { DEFAULT_FUEL_ITEMS, abastecimentoCategory, abastecimentoUnit, changeAbastecimentoCategory, isFuelConsumption, mergeAbastecimentoRows, uniqueOptions } from '@/lib/abastecimentoTypes';
 import {
     FATURAMENTO_EQUIPMENT,
@@ -2076,6 +2077,28 @@ function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }
     );
 }
 
+function DocumentPaymentSummary({ data, filters, search }) {
+    const costs = useMemo(() => summarizeDocumentPayments(data.pagamentosDocumentacao || [], data.cadastroFinanceiro || data.veiculos || [], filters, search), [data.pagamentosDocumentacao, data.cadastroFinanceiro, data.veiculos, filters, search]);
+    const available = Array.isArray(data.pagamentosDocumentacao);
+    const classified = !data.cadastroFinanceiroLoading && !data.cadastroFinanceiroError;
+    return <section className="rounded-xl border border-green-200 bg-green-50/40 p-4 space-y-4">
+        <div><h3 className="font-semibold text-[#1f6b3d]">Custos de documentação</h3><p className="text-xs text-muted-foreground">Fonte: Pagamento de Documentação · separação pelo tipo de posse no Cadastro de Veículos. Respeita período, veículo, projeto e busca.</p></div>
+        {data.pagamentosDocumentacaoLoading && <p role="status" className="text-sm">Atualizando pagamentos…</p>}
+        {data.pagamentosDocumentacaoError && <p role="alert" className="text-sm text-amber-800">{data.pagamentosDocumentacaoError} {available ? 'Valores da última consulta concluída.' : 'Valores indisponíveis.'}</p>}
+        {!classified && <p role="status" className="text-sm text-amber-800">{data.cadastroFinanceiroError || 'Atualizando a classificação dos veículos…'}</p>}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KpiCard label="Custo total de documentação" value={available ? formatFinanceBRL(costs.totalCents) : '—'} sub={`${costs.rows.length} pagamento(s)`} />
+            <KpiCard label="Veículos próprios" value={available && classified ? formatFinanceBRL(costs.ownedCents) : '—'} />
+            <KpiCard label="Veículos locados" value={available && classified ? formatFinanceBRL(costs.rentedCents) : '—'} />
+            <KpiCard label="Sem classificação" value={available && classified ? formatFinanceBRL(costs.unknownCents) : '—'} sub="Veículo não identificado ou posse diferente/indefinida" />
+        </div>
+        {(costs.invalidAmounts > 0 || costs.missingDates > 0) && <p className="text-sm text-amber-800">{costs.invalidAmounts > 0 ? `${costs.invalidAmounts} pagamento(s) sem valor válido não somado(s). ` : ''}{costs.missingDates > 0 ? `${costs.missingDates} registro(s) sem data válida não entra(m) em filtros por período.` : ''}</p>}
+        {available && costs.rows.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum pagamento de documentação encontrado para os filtros selecionados.</p> : available && <ScrollTable head={<>{['Data do pagamento', 'Prestador', 'Veículo / placa', 'Tipo de documentação', 'Posse', 'Valor'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+            {costs.rows.map((row) => <TableRow key={row.id}><TableCell>{row.date ? formatDate(row.date) : 'Não informada'}</TableCell><TableCell>{row.provider || '—'}</TableCell><TableCell>{row.vehicle || '—'}</TableCell><TableCell>{row.document || '—'}</TableCell><TableCell>{row.possession}</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(row.amountCents)}</TableCell></TableRow>)}
+        </ScrollTable>}
+    </section>;
+}
+
 function DocumentacaoView({ data, filters, search }) {
     const [statusFilter, setStatusFilter] = useState('all');
     const activeVehicleKeys = useMemo(() => getActiveVehicleKeys(data), [data.veiculos, data.documentacao]);
@@ -2122,6 +2145,7 @@ function DocumentacaoView({ data, filters, search }) {
                 <KpiCard label="Pendente / s/data" value={NUM(counts.Pendente)} accent="text-slate-600" active={statusFilter === 'Pendente'} onClick={() => setStatusFilter((value) => value === 'Pendente' ? 'all' : 'Pendente')} />
             </div>
             <ActiveFilter label={statusFilter === 'all' ? '' : `Documentação ${statusFilter}`} onClear={() => setStatusFilter('all')} />
+            <DocumentPaymentSummary data={data} filters={filters} search={search} />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <ChartCard title="Documentos por situação">
                     <ResponsiveContainer width="100%" height="100%">
