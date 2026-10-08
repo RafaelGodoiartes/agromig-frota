@@ -1,8 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatFinanceBRL, insuranceSchedule, moneyCents, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMaintenance, OWNED_FLEET_INSURANCE_PAID } from './ownedVehicleFinance.js';
+import { formatFinanceBRL, insuranceSchedule, moneyCents, summarizeInsurance, summarizeOwnedVehicles, summarizeOwnedMonthlyRevenue, summarizeOwnedMaintenance, OWNED_FLEET_INSURANCE_PAID } from './ownedVehicleFinance.js';
 
 const vehicle = (placa, tipoPosse, aluguelMensal) => ({ placa, tipoPosse, aluguelMensal });
+
+test('Prancha usa KM e tarifa de cada viagem no mês, nunca aluguel fixo ou valor da mercadoria', () => {
+    const registry = [vehicle('LTU-5A25', 'Próprio', 18000), vehicle('AAA1B23', 'Próprio', 1000), vehicle('BBB1B23', 'Locado', 900)];
+    const trip = { id: 1, placa: 'LTU5A25', data: '2026-10-01', kmTotal: 100, valorKm: 10, valorCobrado: 9999 };
+    const trips = [trip, trip, { ...trip, id: 2, kmTotal: '250,5', valorKm: 12 }, { ...trip, id: 3, data: '2026-09-01' }];
+    const result = summarizeOwnedMonthlyRevenue(registry, trips, '2026-10');
+    assert.equal(result.totalCents, 500600);
+    assert.equal(result.tripCount, 2);
+    assert.equal(result.rows.find(row => row.plateKey === 'LTU5A25').amountCents, 400600);
+    assert.equal(summarizeOwnedMonthlyRevenue(registry, [], '2026-11').totalCents, 100000);
+    assert.deepEqual(registry[0], vehicle('LTU-5A25', 'Próprio', 18000));
+    for (const missing of [undefined, [{ ...trip, kmTotal: '' }], [{ ...trip, valorKm: '' }], [{ ...trip, data: '' }]]) {
+        assert.equal(summarizeOwnedMonthlyRevenue(registry, missing, '2026-10').rows.find(row => row.plateKey === 'LTU5A25').amountCents, null);
+    }
+    assert.equal(summarizeOwnedMonthlyRevenue([vehicle('LTU5A25', 'Locado', 18000)], trips, '2026-10').totalCents, 0);
+});
 
 test('soma somente Próprio, respeita acentos/caixa e não usa propriedade para substituir Posse', () => {
     const summary = summarizeOwnedVehicles([

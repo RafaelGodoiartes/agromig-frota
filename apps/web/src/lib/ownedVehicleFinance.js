@@ -1,4 +1,4 @@
-import { isoDate } from './faturamento.js';
+import { isoDate, finiteNumber } from './faturamento.js';
 
 const text = (value) => String(value ?? '').trim();
 const key = (value) => text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
@@ -56,6 +56,37 @@ export function summarizeOwnedVehicles(vehicles = []) {
         missingValues: rows.filter((row) => row.amountCents === null).map((row) => row.placa),
         totalCents: rows.reduce((sum, row) => sum + (row.amountCents ?? 0), 0),
     };
+}
+
+export function summarizeOwnedMonthlyRevenue(vehicles, trips, month) {
+    // The Prancha earns per trip, never the fixed rent in Cadastro.
+    const summary = summarizeOwnedVehicles(vehicles.map(row => plateKey(row.placa) === 'LTU5A25' ? { ...row, aluguelMensal: 0 } : row));
+    const truck = summary.rows.find(row => row.plateKey === 'LTU5A25');
+    const seen = new Set();
+    let tripCount = 0;
+    let invalidTrips = 0;
+    let total = 0;
+    let missingDates = 0;
+    if (truck && Array.isArray(trips)) trips.forEach((row, index) => {
+        if (plateKey(row.placa || 'LTU5A25') !== 'LTU5A25') return;
+        const date = isoDate(row.data);
+        if (!date) { missingDates += 1; return; }
+        if (date.slice(0, 7) !== month) return;
+        const identity = row.id ?? `row-${index}`;
+        if (seen.has(identity)) return;
+        seen.add(identity);
+        tripCount += 1;
+        const km = finiteNumber(row.kmTotal);
+        const rate = moneyCents(row.valorKm);
+        const amount = rate === null ? null : Math.round(km * rate);
+        if (km <= 0 || rate === null || rate <= 0 || !Number.isSafeInteger(amount)) { invalidTrips += 1; return; }
+        total += amount;
+    });
+    const tripReady = !truck || Array.isArray(trips);
+    if (truck) { truck.amountCents = tripReady && !invalidTrips && !missingDates ? total : null; truck.revenueBasis = 'KM × tarifa por viagem no mês'; }
+    return { ...summary, tripReady, tripCount, invalidTrips, missingDates,
+        missingValues: summary.rows.filter(row => row.amountCents === null).map(row => row.placa),
+        totalCents: summary.rows.reduce((sum, row) => sum + (row.amountCents ?? 0), 0) };
 }
 
 export function insuranceSchedule(plan = OWNED_FLEET_INSURANCE) {
