@@ -2082,7 +2082,7 @@ function DocumentPaymentSummary({ data, filters, search }) {
     const available = Array.isArray(data.pagamentosDocumentacao);
     const classified = !data.cadastroFinanceiroLoading && !data.cadastroFinanceiroError;
     return <section className="rounded-xl border border-green-200 bg-green-50/40 p-4 space-y-4">
-        <div><h3 className="font-semibold text-[#1f6b3d]">Custos de documentação</h3><p className="text-xs text-muted-foreground">Fonte: Pagamento de Documentação · separação pelo tipo de posse no Cadastro de Veículos. Respeita período, veículo, projeto e busca.</p></div>
+        <div><h3 className="font-semibold text-[#1f6b3d]">Custos de documentação</h3><p className="text-xs text-muted-foreground">Fonte: Pagamento de Documentação · período pela data do serviço e separação pelo tipo de posse no Cadastro de Veículos. Respeita veículo, projeto e busca.</p></div>
         {data.pagamentosDocumentacaoLoading && <p role="status" className="text-sm">Atualizando pagamentos…</p>}
         {data.pagamentosDocumentacaoError && <p role="alert" className="text-sm text-amber-800">{data.pagamentosDocumentacaoError} {available ? 'Valores da última consulta concluída.' : 'Valores indisponíveis.'}</p>}
         {!classified && <p role="status" className="text-sm text-amber-800">{data.cadastroFinanceiroError || 'Atualizando a classificação dos veículos…'}</p>}
@@ -2093,7 +2093,7 @@ function DocumentPaymentSummary({ data, filters, search }) {
             <KpiCard label="Sem classificação" value={available && classified ? formatFinanceBRL(costs.unknownCents) : '—'} sub="Veículo não identificado ou posse diferente/indefinida" />
         </div>
         {(costs.invalidAmounts > 0 || costs.missingDates > 0) && <p className="text-sm text-amber-800">{costs.invalidAmounts > 0 ? `${costs.invalidAmounts} pagamento(s) sem valor válido não somado(s). ` : ''}{costs.missingDates > 0 ? `${costs.missingDates} registro(s) sem data válida não entra(m) em filtros por período.` : ''}</p>}
-        {available && costs.rows.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum pagamento de documentação encontrado para os filtros selecionados.</p> : available && <ScrollTable head={<>{['Data do pagamento', 'Prestador', 'Veículo / placa', 'Tipo de documentação', 'Posse', 'Valor'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+        {available && costs.rows.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum pagamento de documentação encontrado para os filtros selecionados.</p> : available && <ScrollTable head={<>{['Data do serviço', 'Prestador', 'Veículo / placa', 'Tipo de documentação', 'Posse', 'Valor'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
             {costs.rows.map((row) => <TableRow key={row.id}><TableCell>{row.date ? formatDate(row.date) : 'Não informada'}</TableCell><TableCell>{row.provider || '—'}</TableCell><TableCell>{row.vehicle || '—'}</TableCell><TableCell>{row.document || '—'}</TableCell><TableCell>{row.possession}</TableCell><TableCell className="text-right whitespace-nowrap">{formatFinanceBRL(row.amountCents)}</TableCell></TableRow>)}
         </ScrollTable>}
     </section>;

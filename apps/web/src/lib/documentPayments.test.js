@@ -5,6 +5,10 @@ import { parseDocumentPayments, summarizeDocumentPayments, loadDocumentPayments 
 const headers = ['DATA DO PAGAMENTO', 'PRESTADOR DE SERVIÇO', 'VEÍCULO / PLACA', 'TIPO DE DOCUMENTAÇÃO', 'VALOR DO SERVIÇO (R$)'];
 const body = (rows, cols = headers) => `google.visualization.Query.setResponse(${JSON.stringify({ status: 'ok', table: { cols: cols.map((label) => ({ label })), rows: rows.map((values) => ({ c: values.map((v) => ({ v })) })) } })});`;
 const vehicles = [{ placa: 'AAA1B23', tipoPosse: 'Próprio', projeto: 'CEC III', veiculo: 'Modelo A' }, { placa: 'BBB2C34', tipoPosse: 'Locado', projeto: 'VIVEIRO' }];
+test('aceita Data do serviço e preserva compatibilidade com o cabeçalho anterior', () => {
+    const records = [['08/10/2026', 'Prestador', 'AAA1B23', 'CRLV', 100]];
+    assert.deepEqual(parseDocumentPayments(body(records, ['DATA DO SERVIÇO', ...headers.slice(1)])), parseDocumentPayments(body(records)));
+});
 test('lê as colunas reais, datas Google/BR e valores em centavos; planilha vazia é válida', () => {
     const rows = parseDocumentPayments(body([['Date(2026,9,8)', 'Prestador', 'AAA1B23', 'CRLV', 1234.56], ['08/10/2026', 'Outro', 'BBB2C34', 'Laudo', 'R$ 200,01']]));
     assert.equal(rows[0].date, '2026-10-08');

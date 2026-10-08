@@ -11,7 +11,8 @@ export function parseDocumentPayments(body) {
     const payload = JSON.parse(match[1]);
     if (payload.status !== 'ok' || !Array.isArray(payload.table?.cols) || !Array.isArray(payload.table?.rows)) throw new Error('Não foi possível ler os pagamentos de documentação.');
     const headers = payload.table.cols.map((column) => key(column.label));
-    const indexes = ['DATA DO PAGAMENTO', 'PRESTADOR DE SERVIÇO', 'VEÍCULO / PLACA', 'TIPO DE DOCUMENTAÇÃO', 'VALOR DO SERVIÇO (R$)'].map((name) => headers.indexOf(key(name)));
+    const dateColumn = headers.indexOf(key('DATA DO SERVIÇO'));
+    const indexes = [dateColumn >= 0 ? dateColumn : headers.indexOf(key('DATA DO PAGAMENTO')), ...['PRESTADOR DE SERVIÇO', 'VEÍCULO / PLACA', 'TIPO DE DOCUMENTAÇÃO', 'VALOR DO SERVIÇO (R$)'].map((name) => headers.indexOf(key(name)))];
     if (indexes.some((index) => index < 0)) throw new Error('Cabeçalhos dos pagamentos de documentação não reconhecidos.');
     return payload.table.rows.flatMap((row, index) => {
         const cells = indexes.map((i) => row.c?.[i]);
