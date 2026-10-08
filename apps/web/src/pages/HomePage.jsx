@@ -43,6 +43,7 @@ import { formatFinanceBRL, insuranceSchedule, summarizeInsurance, summarizeOwned
 import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanceParts';
 import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
 import VehicleTagDialog from '@/components/VehicleTagDialog';
+import VehicleInstallmentSummary from '@/components/VehicleInstallmentSummary';
 import { launchPlateKey, mergeLaunchVehicles, registrationVehicle, selectRegisteredVehicle } from '@/lib/launchVehicles';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
@@ -1715,6 +1716,7 @@ function FaturamentoView({ data }) {
 
     return (
         <section className="flex flex-col gap-5">
+            <VehicleInstallmentSummary />
             {data.faturamentoError && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle className="text-sm font-semibold">Faturamento não atualizado</AlertTitle><AlertDescription className="text-xs">{data.faturamentoError}{sourceReady && ' Os últimos dados carregados foram mantidos.'}</AlertDescription></Alert>}
             {!sourceReady && !data.faturamentoError && <p role="status" className="text-sm text-[#1f7a46]">Carregando viagens e locações das planilhas…</p>}
             <Card className="p-4 flex flex-col gap-3 bg-[#f8fcf9] border-[#cfe8d5]">
