@@ -17,6 +17,7 @@ export function parseOwnedVehicleRegistry(body) {
     const rent = column('ALUGUEL MENSAL (R$)', 'ALUGUEL MENSAL', 'VALOR MENSAL DO ALUGUEL');
     const model = column('VEÍCULO / MODELO');
     const project = column('PROJETO ATENDIDO');
+    const installment = column('PARCELA MENSAL (R$)');
     if (plate < 0 || possession < 0 || rent < 0) throw new Error('Cadastro sem as colunas PLACA, TIPO DE POSSE/POSSE ou ALUGUEL MENSAL.');
     return payload.table.rows.flatMap((row) => {
         const value = (index) => row.c?.[index]?.v ?? row.c?.[index]?.f ?? '';
@@ -29,6 +30,10 @@ export function parseOwnedVehicleRegistry(body) {
             tipoPosse: String(value(possession)).trim(),
             projeto: String(value(project)).trim(),
             aluguelMensal: cents === null ? null : cents / 100,
+            parcelaMensal: installment < 0 ? null : (() => {
+                const amount = moneyCents(value(installment));
+                return amount === null ? null : amount / 100;
+            })(),
         }];
     });
 }

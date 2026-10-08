@@ -9,6 +9,18 @@ const response = (headers, rows) => `google.visualization.Query.setResponse(${JS
 } })});`;
 const headers = ['PLACA', 'VEÍCULO / MODELO', 'TIPO DE POSSE', 'ALUGUEL MENSAL (R$)', 'PROJETO ATENDIDO'];
 
+test('reads installment column separately from rent, preserves blank versus zero', () => {
+    const rows = parseOwnedVehicleRegistry(response([...headers, 'PARCELA MENSAL (R$)'], [
+        ['AAA1B23', '', 'Próprio', 1000, '', 'R$ 123,45'],
+        ['BBB2C34', '', 'Próprio', 1000, '', null],
+        ['CCC3D45', '', 'Próprio', 1000, '', 0],
+    ]));
+    assert.equal(rows[0].parcelaMensal, 123.45);
+    assert.equal(rows[0].aluguelMensal, 1000);
+    assert.equal(rows[1].parcelaMensal, null);
+    assert.equal(rows[2].parcelaMensal, 0);
+});
+
 test('mapeia cabeçalhos reais e converte aluguel para número, sem cadastrar veículos à mão', () => {
     const rows = parseOwnedVehicleRegistry(response(headers, [['AAA1B23', 'Veículo', 'Próprio', 1234.56, 'Projeto'], ['', '', '', null, '']]));
     assert.equal(rows.length, 1);
