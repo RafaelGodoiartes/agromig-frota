@@ -47,3 +47,24 @@ export function installmentCalendar(contract, today) {
         };
     });
 }
+
+export function monthlyInstallmentExpense(registry, month) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) return { available: false, totalCents: null, rows: [], missing: [], vehiclesCents: null, truckCents: null, machinesCents: null };
+    const rows = resolveInstallmentAmounts(registry).flatMap(contract => {
+        const installment = installmentCalendar(contract, `${month}-01`).find(row => row.dueDate.slice(0, 7) === month);
+        return installment ? [{ ...contract, installment, category: contract.id === 'l200' ? 'Veículos' : contract.id === 'prancha' ? 'Caminhão' : 'Máquinas', amountCents: contract.currentCents }] : [];
+    });
+    const sum = category => {
+        const members = category ? rows.filter(row => row.category === category) : rows;
+        return members.some(row => row.amountCents === null) ? null : members.reduce((total, row) => total + row.amountCents, 0);
+    };
+    const missing = rows.filter(row => row.amountCents === null).map(row => row.name);
+    return { available: missing.length === 0, missing, rows, totalCents: sum(), vehiclesCents: sum('Veículos'), truckCents: sum('Caminhão'), machinesCents: sum('Máquinas') };
+}
+
+// Repricing past installments is an estimate, never the actual payment ledger.
+export function estimateInstallmentTotals(contracts) {
+    const available = contracts.every(contract => contract.currentCents !== null);
+    const total = count => available ? contracts.reduce((sum, contract) => sum + contract.currentCents * count(contract), 0) : null;
+    return { available, estimatedPaidCents: total(contract => contract.paid), estimatedRemainingCents: total(contract => contract.total - contract.paid), estimatedContractCents: total(contract => contract.total), actualPaidCents: null };
+}
