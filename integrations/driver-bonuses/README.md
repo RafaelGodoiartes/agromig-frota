@@ -33,6 +33,10 @@ provisório e não executa pagamento ou aprovação automática.
 
 Regras vigentes são congeladas em cada registro. Documento de viagem ausente ou
 qualquer pendência de KPI impede aprovação. Reabertura preserva as ações anteriores.
+Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas
+pelo servidor, justificativa e confirmação explícita para aprovar. O fluxo passa
+por Em análise → Aguardando aprovação → Aprovado. Pendências são apresentadas
+antes da decisão e uma tela desatualizada não sobrescreve mudanças concorrentes.
 Cada relatório tem quatro anexos e uma assinatura do conteúdo. Dados alterados
 depois da conferência invalidam sua liberação. O agendador do servidor, ativado
 em 09/10/2026, verifica o dia 10 em America/Sao_Paulo, por volta das 08h, e usa a
@@ -46,6 +50,8 @@ bloqueada para impedir reenvio duplicado; não há retry cego.
 
 `node --test integrations/driver-bonuses/BonusRules.test.js` verifica regras,
 assinatura, acesso, atribuição e separação entre provisórios e aprovados.
+`node --test integrations/driver-bonuses/BonusStatus.test.js` verifica o fluxo,
+bloqueios de aprovação, histórico, concorrência e o formulário com dados sintéticos.
 Foram conferidos a leitura dos 20 motoristas, os veículos, formulários, acesso
 do proprietário e criação do acionador. Não foram gravados registros fictícios,
 aprovados pagamentos ou enviados e-mails de teste em produção.

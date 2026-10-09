@@ -108,6 +108,7 @@ function bonusPortal_() {
 function getDriverBonusesState() {
   bonusUser_(); const state = bonusStore_();
   return { ...state, fileId: undefined, signature: undefined, drivers: bonusDrivers_(), vehicles: bonusVehicles_(), account: BONUS_USER, recipients: BONUS_RECIPIENTS,
+    records: state.records.map(record => ({ ...record, nextStatuses: bonusNextStatuses_(record.status), approvalBlockers: bonusApprovalBlockers_(record) })),
     schedulerEnabled: PropertiesService.getScriptProperties().getProperty('BONUS_SCHEDULER_OWNER') === BONUS_USER };
 }
 function saveDriverBonus(input) {
@@ -140,13 +141,27 @@ function saveDriverBonus(input) {
     data.records.push(record); return record;
   });
 }
-function transitionDriverBonus(id, status, justification, reviewed) {
+function bonusNextStatuses_(status) {
+  const next = { 'Rascunho': ['Aguardando documentos', 'Em análise'], 'Aguardando documentos': ['Em análise'], 'Em análise': ['Aguardando documentos', 'Aguardando aprovação', 'Rejeitado'], 'Aguardando aprovação': ['Aprovado', 'Rejeitado', 'Em análise'], 'Aprovado': ['Pago', 'Em análise'], 'Rejeitado': ['Em análise'], 'Pago': ['Aprovado'] };
+  return next[status] || [];
+}
+function bonusApprovalBlockers_(record) {
+  const reasons = [...(record.calculation?.pending || [])];
+  if (record.category === 'Viagem' && !record.evidence) reasons.push('Anexe o documento original da viagem.');
+  return [...new Set(reasons)];
+}
+function transitionDriverBonus(id, status, justification, reviewed, expectedStatus) {
   return bonusMutate_('Alteração de status ' + status, (data, actor) => {
     const record = data.records.find(row => row.id === id);
     if (!record || !String(justification || '').trim()) throw new Error('Selecione um registro e informe justificativa.');
-    const next = { 'Rascunho': ['Aguardando documentos', 'Em análise'], 'Aguardando documentos': ['Em análise'], 'Em análise': ['Aguardando documentos', 'Aguardando aprovação', 'Rejeitado'], 'Aguardando aprovação': ['Aprovado', 'Rejeitado', 'Em análise'], 'Aprovado': ['Pago', 'Em análise'], 'Rejeitado': ['Em análise'], 'Pago': ['Aprovado'] };
-    if (!next[record.status]?.includes(status)) throw new Error('Transição não permitida.');
-    if (status === 'Aprovado' && (!reviewed || record.calculation.pending?.length || (record.category === 'Viagem' && !record.evidence))) throw new Error('Confira as evidências e resolva todas as pendências antes de aprovar.');
+    if (expectedStatus !== undefined && record.status !== expectedStatus) throw new Error('O status mudou em outra tela. Atualize os registros antes de continuar.');
+    const next = bonusNextStatuses_(record.status);
+    if (!next.includes(status)) throw new Error('O registro está em "' + record.status + '". Selecione uma das próximas etapas: ' + next.join(', ') + '.');
+    if (status === 'Aprovado') {
+      const blockers = bonusApprovalBlockers_(record);
+      if (blockers.length) throw new Error('Aprovação bloqueada: ' + blockers.join(' '));
+      if (reviewed !== true) throw new Error('Marque a confirmação de conferência dos dados, cálculos e documentos antes de aprovar.');
+    }
     // Marking Paid is a bookkeeping action, not a financial transfer.
     record.actions.push({ from: record.status, to: status, justification: String(justification), actor, at: new Date().toISOString() });
     record.status = status;
