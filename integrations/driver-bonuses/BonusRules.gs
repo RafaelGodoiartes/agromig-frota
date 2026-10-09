@@ -50,7 +50,7 @@ function bonusEvaluate_(input, evidence, rules) {
   const days = bonusDays_(input.workedDates, input.month);
   const plates = String(input.plates || '').split(/[,;\s]+/).filter(Boolean).map(bonusKey_);
   if (!plates.length) throw new Error('Informe os veículos utilizados.');
-  const pending = [], occurrences = [];
+  const pending = [...(evidence.manualConflicts || [])], occurrences = [];
   const belongs = row => days.includes(row.date) && plates.includes(bonusKey_(row.plate));
   const attributed = row => bonusResponsible_(input.driver, row.plate, row.date, evidence.assignments || []);
   const assignedDays = days.filter(day => plates.some(plate => bonusResponsible_(input.driver, plate, day, evidence.assignments || [])));
@@ -62,19 +62,19 @@ function bonusEvaluate_(input, evidence, rules) {
     reason: checklistDays.length + ' de ' + days.length + ' dias trabalhados com checklist válido.',
     missingDates: days.filter(day => !checklistDays.includes(day)) }];
   const movement = (evidence.circulation || []).filter(belongs);
-  const irregular = movement.filter(row => row.time && (row.time < rules.allowedStart || row.time > rules.allowedEnd) && !row.authorized);
+  const irregular = movement.filter(row => ((row.manualVerified && row.outsideHours === true) || (row.time && (row.time < rules.allowedStart || row.time > rules.allowedEnd))) && !row.authorized);
   const provenIrregular = irregular.filter(row => attributed(row) && row.confirmed);
   if (!evidence.circulationComplete || irregular.some(row => !attributed(row) || !row.confirmed)) pending.push('Circulação: cobertura, ocorrência ou responsabilidade não comprovada.');
   occurrences.push(...provenIrregular.map(row => ({ ...row, criterion: 'Circulação', reason: 'Fora do horário e sem exceção autorizada.' })));
   results.push({ criterion: 'Circulação', maximumCents: rules.circulationCents, cents: provenIrregular.length ? 0 : rules.circulationCents, reason: provenIrregular.length ? 'Ocorrência eliminatória; requer decisão humana.' : 'Sem irregularidade atribuída nos dados consultados.' });
-  const speeding = (evidence.speed || []).filter(belongs).filter(row => bonusNumber_(row.speed) > (row.roadLimit ? Math.min(row.limit, row.roadLimit) : row.limit));
+  const speeding = (evidence.speed || []).filter(belongs).filter(row => (row.manualVerified && row.aboveLimit === true) || bonusNumber_(row.speed) > (row.roadLimit ? Math.min(row.limit, row.roadLimit) : row.limit));
   const provenSpeed = speeding.filter(row => attributed(row) && row.confirmed);
   if (!evidence.speedComplete || speeding.some(row => !attributed(row) || !row.confirmed)) pending.push('Velocidade: cobertura, ocorrência ou responsabilidade não comprovada.');
   occurrences.push(...provenSpeed.map(row => ({ ...row, criterion: 'Velocidade', reason: 'Velocidade superior ao limite aplicável.' })));
   results.push({ criterion: 'Velocidade', maximumCents: rules.speedCents, cents: provenSpeed.length ? 0 : rules.speedCents, reason: provenSpeed.length ? 'Excesso atribuído nos registros; sujeito à revisão.' : 'Sem excesso atribuído nos dados consultados.' });
   const requiredWashes = String(input.washDates || '').split(/[,;\s]+/).filter(Boolean).map(bonusDate_);
   if (!requiredWashes.length || requiredWashes.some(date => !days.includes(date))) pending.push('Defina as datas de lavagem exigidas entre os dias trabalhados.');
-  const missingWashes = requiredWashes.filter(date => !(evidence.washes || []).some(row => row.date === date && belongs(row) && attributed(row) && row.evidenceId));
+  const missingWashes = requiredWashes.filter(date => !(evidence.washes || []).some(row => row.date === date && belongs(row) && attributed(row) && (row.evidenceId || (row.manualVerified && row.confirmed))));
   if (!evidence.washComplete) pending.push('Lavagem: comprovação do período não conferida.');
   results.push({ criterion: 'Lavagem', maximumCents: rules.washCents, cents: missingWashes.length ? 0 : rules.washCents, reason: missingWashes.length ? 'Lavagens exigidas sem comprovação.' : 'Lavagens previstas comprovadas.', missingDates: missingWashes });
   const fines = (evidence.fines || []).filter(belongs);

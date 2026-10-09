@@ -109,16 +109,58 @@ function bonusChecklists_(month) {
   }
   return { records, complete };
 }
-function bonusEvidence_(data, driver, month, input) {
+function bonusManualAssessment_(input, driver, month, rules, actor) {
+  const manual = input.manualAssessment;
+  if (!manual) return null;
+  if (manual.reviewed !== true) throw new Error('Confirme a conferência das informações lançadas manualmente.');
+  const days = bonusDays_(input.workedDates, month), plates = String(input.plates || '').split(/[,;\s]+/).filter(Boolean).map(bonusKey_);
+  const categories = {};
+  ['Circulação', 'Velocidade', 'Lavagem', 'Multas'].forEach(category => {
+    const declaration = manual.categories?.[category];
+    if (!declaration || !['Sim', 'Não'].includes(declaration.answer)) throw new Error('Responda Sim ou Não para ' + category + '.');
+    if (!Array.isArray(declaration.rows) || declaration.rows.length > 200) throw new Error('Confira as datas de ' + category + '.');
+    if ((declaration.answer === 'Sim' && !declaration.rows.length) || (declaration.answer === 'Não' && declaration.rows.length)) throw new Error(category + ': informe as datas quando responder Sim; remova as datas quando responder Não.');
+    const seen = new Set();
+    const rows = declaration.rows.map(row => {
+      const date = bonusDate_(row.date), plate = bonusKey_(row.plate);
+      if (!date || !days.includes(date) || !plates.includes(plate)) throw new Error(category + ': a data deve ser um dia trabalhado da competência e a placa deve estar entre os veículos utilizados.');
+      const key = category + '|' + plate + '|' + date;
+      if (seen.has(key)) throw new Error(category + ': data/veículo duplicados.');
+      seen.add(key);
+      return { category, date, plate, driver, description: String(row.description || '').slice(0, 1000),
+        authorized: category === 'Circulação' && row.authorized === true,
+        contested: category === 'Multas' && row.contested === true,
+        confirmed: true, manualVerified: true, source: 'Declaração manual do gestor',
+        outsideHours: category === 'Circulação', aboveLimit: category === 'Velocidade',
+        review: { actor, at: new Date().toISOString(), decision: 'Informação conferida pelo gestor' } };
+    });
+    categories[category] = { answer: declaration.answer, rows };
+  });
+  return { reviewed: true, actor, at: new Date().toISOString(), categories };
+}
+function bonusEvidence_(data, driver, month, input, rules) {
   const checklist = bonusChecklists_(month);
   const operations = data.operations.filter(row => row.date.slice(0, 7) === month);
+  const manual = bonusManualAssessment_(input, driver, month, rules, bonusUser_());
   const confirmedImports = data.imports.filter(row => row.month === month && bonusNameKey_(row.driver) === bonusNameKey_(driver) && row.status === 'Confirmada');
-  const covered = category => input.coverage?.[category] === true && (confirmedImports.some(row => row.category === category) || (category === 'Lavagem' && operations.some(row => row.category === category)) || (category === 'Multas' && input.noFinesConfirmed === true));
+  const covered = category => !!manual || (input.coverage?.[category] === true && (confirmedImports.some(row => row.category === category) || (category === 'Lavagem' && operations.some(row => row.category === category)) || (category === 'Multas' && input.noFinesConfirmed === true)));
+  // Existing occurrences remain visible; a new declaration never erases historical evidence.
+  const rowsFor = category => [...operations.filter(row => row.category === category), ...(manual?.categories[category].rows || [])];
+  const days = bonusDays_(input.workedDates, month), plates = String(input.plates || '').split(/[,;\s]+/).filter(Boolean).map(bonusKey_);
+  const applicableRules = rules || bonusRulesFor_(data.ruleVersions, month);
+  const manualConflicts = manual ? Object.keys(manual.categories).filter(category => manual.categories[category].answer === 'Não' && operations.some(row => {
+    if (row.category !== category || !days.includes(row.date) || !plates.includes(bonusKey_(row.plate))) return false;
+    if (category === 'Circulação') return !row.authorized && row.time && (row.time < applicableRules.allowedStart || row.time > applicableRules.allowedEnd);
+    if (category === 'Velocidade') return bonusNumber_(row.speed) > (row.roadLimit ? Math.min(row.limit, row.roadLimit) : row.limit);
+    return true;
+  })).map(category => category + ': a resposta Não diverge de ocorrência já registrada; confira o histórico.') : [];
   return { assignments: data.assignments, checklists: checklist.records, checklistComplete: checklist.complete,
-    circulation: operations.filter(row => row.category === 'Circulação'), circulationComplete: covered('Circulação'),
-    speed: operations.filter(row => row.category === 'Velocidade'), speedComplete: covered('Velocidade'),
-    washes: operations.filter(row => row.category === 'Lavagem'), washComplete: covered('Lavagem'),
-    fines: operations.filter(row => row.category === 'Multas'), finesComplete: covered('Multas'),
+    circulation: rowsFor('Circulação'), circulationComplete: covered('Circulação'),
+    speed: rowsFor('Velocidade'), speedComplete: covered('Velocidade'),
+    washes: rowsFor('Lavagem'), washComplete: covered('Lavagem'),
+    fines: rowsFor('Multas'), finesComplete: covered('Multas'),
+    manualAssessment: manual,
+    manualConflicts,
     coverage: input.coverage, evidenceIds: [...new Set(operations.map(row => row.evidenceId).filter(Boolean))],
     checklistSnapshot: checklist.records };
 }
@@ -126,10 +168,11 @@ function reevaluateBonus(id, input) {
   return bonusMutate_('Reavaliação de KPIs', data => {
     const row = data.records.find(row => row.id === id);
     if (!row || row.category !== 'KPIs' || ['Aprovado', 'Pago'].includes(row.status)) throw new Error('Reabra o registro em análise antes de recalcular.');
-    const evidence = bonusEvidence_(data, row.driver, row.month, input);
+    const evidence = bonusEvidence_(data, row.driver, row.month, input, row.rules);
     row.calculation = bonusEvaluate_({ ...input, driver: row.driver, month: row.month }, evidence, row.rules);
     row.calculation.cents = row.calculation.provisionalCents;
-    row.details = { ...row.details, workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, evidenceIds: evidence.evidenceIds, checklistSnapshot: evidence.checklistSnapshot };
+    if (input.justification !== undefined) row.justification = String(input.justification);
+    row.details = { ...row.details, workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, evidenceIds: evidence.evidenceIds, checklistSnapshot: evidence.checklistSnapshot, manualAssessment: evidence.manualAssessment };
     return row;
   });
 }

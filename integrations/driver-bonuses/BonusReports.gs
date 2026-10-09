@@ -37,13 +37,16 @@ function prepareBonusReport(month) {
     files.push(bonusSavePdf_(folder, 'Relatório Consolidado de Bonificações', bonusReportHtml_('Bonificações ' + month, summaryHeaders, summaryRows, notes)));
     const details = model.records.flatMap(row => {
       const lines = row.category === 'KPIs' ? row.calculation.results.map(kpi => [row.driver, row.category + ' / ' + kpi.criterion, row.status, bonusBRL_(kpi.maximumCents), bonusBRL_(row.calculation.eliminationSuggested ? 0 : kpi.cents), kpi.reason + ' ' + (kpi.missingDates || []).join(', ')]) : [[row.driver, row.category, row.status, bonusBRL_(row.calculation.cents), bonusBRL_(row.approved?.cents || 0), row.justification + ' ' + JSON.stringify(row.details)]];
-      if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(row.calculation.maximumCents), bonusBRL_(row.approved?.cents || 0), JSON.stringify({ pending: row.calculation.pending, occurrences: row.calculation.occurrences, elimination: row.calculation.eliminationSuggested, actions: row.actions })]);
+      if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(row.calculation.maximumCents), bonusBRL_(row.approved?.cents || 0), JSON.stringify({ pending: row.calculation.pending, occurrences: row.calculation.occurrences, manualAssessment: row.details.manualAssessment, elimination: row.calculation.eliminationSuggested, actions: row.actions })]);
       return lines;
     });
     files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista', bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Previsto/provisório', 'Concedido/provisório', 'Justificativa e evidências'], details, notes + ' Valores de critérios não aprovados são provisórios.')));
     const evidenceRows = model.records.flatMap(row => {
       const ids = [...new Set([row.evidence?.id, ...(row.details.evidenceIds || [])].filter(Boolean))];
-      return ids.map(id => { const file = DriveApp.getFileById(id); return [row.driver, row.category, row.month, file.getName(), file.getUrl()]; });
+      const references = ids.map(id => { const file = DriveApp.getFileById(id); return [row.driver, row.category, row.month, file.getName(), file.getUrl()]; });
+      const manual = row.details.manualAssessment;
+      if (manual) references.push([row.driver, row.category, row.month, 'Declaração manual conferida — sem arquivo importado', manual.actor + ' · ' + manual.at + ' · Respostas e datas no demonstrativo detalhado.']);
+      return references;
     });
     files.push(bonusSavePdf_(folder, 'Índice de Evidências', bonusReportHtml_('Índice de evidências ' + month, ['Motorista', 'Categoria', 'Competência', 'Original', 'Referência segura'], evidenceRows, 'Os arquivos originais permanecem no Drive. Os links exigem a conta autorizada; não são tornados públicos.')));
     const workbook = SpreadsheetApp.create('Conferência Bonificações ' + month);

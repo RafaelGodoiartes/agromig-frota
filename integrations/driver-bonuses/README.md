@@ -18,7 +18,8 @@ Não adiciona dados financeiros à API anônima e não cria um dashboard de dese
   o upload, inclusive se uma subpasta tiver compartilhamento independente.
 - Cadastro: `Motoristas!A5:A` e `Cadastro de Veículos!A5:B` da planilha de integração.
   Matrícula e cargo estão indisponíveis na fonte atual; não são inventados.
-- Importação XLS/XLSX usa o serviço avançado Drive v3. Os originais são preservados.
+- A tela não exige mais importação de Excel. As funções antigas e seus originais
+  são preservados somente para compatibilidade e conferência do histórico.
 - Base JSON e revisões no Drive, com lock e assinatura HMAC. A chave fica nas
   propriedades privadas do projeto, nunca no repositório. Edição direta da base
   sem assinatura válida bloqueia cálculos definitivos e envios.
@@ -33,6 +34,15 @@ provisório e não executa pagamento ou aprovação automática.
 
 Regras vigentes são congeladas em cada registro. Documento de viagem ausente ou
 qualquer pendência de KPI impede aprovação. Reabertura preserva as ações anteriores.
+Circulação fora do horário, excesso de velocidade, lavagens e multas são declarados
+com Sim/Não, datas e placas no formulário de KPIs. A conta Frota confirma a
+conferência; autoria, respostas e datas ficam na base assinada e no demonstrativo.
+Uma declaração não é apresentada como arquivo comprobatório. Ausência de resposta
+não equivale a Não. Exceções autorizadas e multas contestadas continuam distintas.
+O checklist permanece consultado diretamente no Epicollect5, com falhas de leitura
+mantidas como pendências. A responsabilidade histórica segue a aba Utilização.
+Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
+conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas
 pelo servidor, justificativa e confirmação explícita para aprovar. O fluxo passa
 por Em análise → Aguardando aprovação → Aprovado. Pendências são apresentadas
@@ -52,13 +62,14 @@ bloqueada para impedir reenvio duplicado; não há retry cego.
 assinatura, acesso, atribuição e separação entre provisórios e aprovados.
 `node --test integrations/driver-bonuses/BonusStatus.test.js` verifica o fluxo,
 bloqueios de aprovação, histórico, concorrência e o formulário com dados sintéticos.
+`node --test integrations/driver-bonuses/BonusManual.test.js` verifica declarações,
+datas, exceções, contestação, fontes históricas e consulta direta do checklist.
 Foram conferidos a leitura dos 20 motoristas, os veículos, formulários, acesso
 do proprietário e criação do acionador. Não foram gravados registros fictícios,
 aprovados pagamentos ou enviados e-mails de teste em produção.
 
 A implementação não deve ser declarada integralmente concluída antes de:
 
-- validar os formatos reais de Excel, inclusive várias abas e mapeamentos;
 - testar anexos e geração dos quatro relatórios com registros autorizados;
 - validar o fluxo de revisão, aprovação e primeiro envio com o responsável;
 - concluir reenvio manual após nova conferência e recuperação de envio incerto;

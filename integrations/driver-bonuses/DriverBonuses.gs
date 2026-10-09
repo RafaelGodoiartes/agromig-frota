@@ -130,10 +130,10 @@ function saveDriverBonus(input) {
       calculation = { cents: rules.trustCents }; details = { authorization: String(input.authorization) };
       if (input.file) evidence = bonusUpload_(bonusDestination_(driver, month, 'Cargo de confiança'), input.file, false);
     } else {
-      const reviewed = bonusEvidence_(data, driver.name, month, input);
+      const reviewed = bonusEvidence_(data, driver.name, month, input, rules);
       calculation = bonusEvaluate_({ ...input, driver: driver.name }, reviewed, rules);
       calculation.cents = calculation.provisionalCents;
-      details = { workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, coverage: reviewed.coverage, evidenceIds: reviewed.evidenceIds, checklistSnapshot: reviewed.checklistSnapshot };
+      details = { workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, coverage: reviewed.coverage, evidenceIds: reviewed.evidenceIds, checklistSnapshot: reviewed.checklistSnapshot, manualAssessment: reviewed.manualAssessment };
     }
     const record = { id: Utilities.getUuid(), duplicateKey, driver: driver.name, driverId: driver.id, month, category: input.category,
       calculation, details, rules: { ...rules }, evidence, justification: String(input.justification || ''), notes: String(input.notes || ''),
