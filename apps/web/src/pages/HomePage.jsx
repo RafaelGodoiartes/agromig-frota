@@ -44,6 +44,7 @@ import { resolvePartsVehicle, summarizeMaintenanceParts } from '@/lib/maintenanc
 import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
 import VehicleTagDialog from '@/components/VehicleTagDialog';
 import VehicleInstallmentSummary from '@/components/VehicleInstallmentSummary';
+import DriverBonusesView from '@/components/DriverBonusesView';
 import { monthlyInstallmentExpense } from '@/lib/vehicleInstallments';
 import { launchPlateKey, mergeLaunchVehicles, registrationVehicle, selectRegisteredVehicle } from '@/lib/launchVehicles';
 
@@ -110,6 +111,7 @@ const TABS = [
     { id: 'km', label: 'KM Rodado', icon: Gauge },
     { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
     { id: 'faturamento', label: 'Faturamento', icon: CircleDollarSign },
+    { id: 'bonificacoes', label: 'Bonificações', icon: UsersRound },
 ];
 
 // --- small presentational helpers -----------------------------------------
@@ -889,7 +891,7 @@ export default function HomePage() {
                 {data && (
                     <>
                         {/* Filters */}
-                        {tab !== 'faturamento' && <Card className="p-4">
+                        {tab !== 'faturamento' && tab !== 'bonificacoes' && <Card className="p-4">
                             <div className="flex flex-wrap items-end gap-3">
                                 <div className="flex flex-col gap-1">
                                     <label className="text-xs font-medium text-muted-foreground">Período</label>
@@ -961,6 +963,7 @@ export default function HomePage() {
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
                         {tab === 'checklist' && <ChecklistView data={data} filters={filters} search={search} />}
                         {tab === 'faturamento' && <FaturamentoView data={data} />}
+                        {tab === 'bonificacoes' && <DriverBonusesView />}
                     </>
                 )}
             </main>
