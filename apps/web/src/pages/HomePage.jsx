@@ -47,6 +47,7 @@ import VehicleInstallmentSummary from '@/components/VehicleInstallmentSummary';
 import DriverBonusesView from '@/components/DriverBonusesView';
 import { monthlyInstallmentExpense } from '@/lib/vehicleInstallments';
 import { launchPlateKey, mergeLaunchVehicles, registrationVehicle, selectRegisteredVehicle } from '@/lib/launchVehicles';
+import { summarizeWeeklyKm } from '@/lib/weeklyKm';
 
 const BRL = (v) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const NUM = (v, dec = 0) => (v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: dec, minimumFractionDigits: 0 }));
@@ -713,47 +714,7 @@ export default function HomePage() {
         setFilters((current) => ({ ...current, periodStart: localIsoDate(draftPeriod?.from), periodEnd: localIsoDate(draftPeriod?.to) }));
         setPeriodOpen(false);
     };
-    const kmSemanalStatus = useMemo(() => {
-        const empty = { monthLabel: '', pending: [] };
-        if (!data) return empty;
-
-        const now = new Date();
-        now.setHours(23, 59, 59, 999);
-        const dueWeeks = (data.kmSemanalDatas || [])
-            .map((date, index) => ({ date, index, parsed: date ? new Date(`${date}T00:00:00`) : null }))
-            .filter(({ parsed }) => parsed && !Number.isNaN(parsed.getTime()) && parsed <= now);
-        if (dueWeeks.length === 0) return empty;
-
-        const kmByPlate = new Map(
-            data.kmRodado
-                .filter((row) => row.placa)
-                .map((row) => [vehicleKey(row.placa), row]),
-        );
-        const registeredByPlate = new Map();
-        data.veiculos.forEach((vehicle) => {
-            const plate = String(vehicle.placa || '').trim().toUpperCase();
-            const key = vehicleKey(plate);
-            if (key && !registeredByPlate.has(key)) registeredByPlate.set(key, { ...vehicle, placa: plate, key });
-        });
-
-        const pending = [...registeredByPlate.values()]
-            .map((vehicle) => {
-                const entryDate = vehicle.dataEntrada ? new Date(`${vehicle.dataEntrada}T00:00:00`) : null;
-                const weeklyRow = kmByPlate.get(vehicle.key);
-                const missingDates = dueWeeks
-                    .filter(({ parsed }) => !entryDate || Number.isNaN(entryDate.getTime()) || entryDate <= parsed)
-                    .filter(({ index }) => weeklyRow?.leituras?.[index] === null || weeklyRow?.leituras?.[index] === undefined)
-                    .map(({ date }) => date);
-                return { ...vehicle, missingDates };
-            })
-            .filter((vehicle) => vehicle.missingDates.length > 0)
-            .sort((a, b) => a.placa.localeCompare(b.placa, 'pt-BR'));
-
-        return {
-            monthLabel: new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dueWeeks[0].parsed),
-            pending,
-        };
-    }, [data]);
+    const kmSemanalStatus = useMemo(() => summarizeWeeklyKm(data || {}), [data]);
 
     const clearPeriod = () => {
         setDraftPeriod({ from: undefined, to: undefined });
@@ -852,7 +813,30 @@ export default function HomePage() {
                     </Alert>
                 )}
 
-                {kmSemanalStatus.pending.length > 0 && (
+                {data?.kmSemanalLoading && (
+                    <p className="text-xs text-muted-foreground" role="status">Conferindo KM semanal na planilha…</p>
+                )}
+                {data && kmSemanalStatus.warnings.length > 0 && (
+                    <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle className="text-sm font-semibold">KM semanal — conferir competência</AlertTitle>
+                        <AlertDescription className="text-xs space-y-2">
+                            {kmSemanalStatus.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+                            {kmSemanalStatus.review.length > 0 && (
+                                <details>
+                                    <summary className="cursor-pointer font-semibold">{kmSemanalStatus.review.length} veículo(s) com leitura em semana futura — ver todos</summary>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {kmSemanalStatus.review.map((vehicle) => <Badge key={vehicle.key} variant="outline" className="max-w-full whitespace-normal break-words bg-white">
+                                            {vehicle.placa} · {vehicle.veiculo} · {vehicle.futureDates.map((date) => formatDate(date)).join(', ')}
+                                        </Badge>)}
+                                    </div>
+                                </details>
+                            )}
+                            <a className="inline-block underline font-medium" href="https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/edit#gid=1792383375" target="_blank" rel="noopener noreferrer">Conferir a aba KM Semanal</a>
+                        </AlertDescription>
+                    </Alert>
+                )}
+                {data && kmSemanalStatus.pending.length > 0 && (
                     <Alert className="border-orange-300 bg-orange-50 text-orange-950 dark:bg-orange-950/40 dark:text-orange-100">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle className="text-sm font-semibold">
@@ -860,12 +844,15 @@ export default function HomePage() {
                         </AlertTitle>
                         <AlertDescription className="text-xs">
                             <p>
-                                Faltam leituras vencidas de {kmSemanalStatus.monthLabel} para:
+                                Leituras faltantes ou com competência a conferir em {kmSemanalStatus.monthLabel}:
                             </p>
+                            <p className="mt-1">Conferência de todos os {kmSemanalStatus.total} veículos/equipamentos, sem limitar a lista pelos filtros do painel.</p>
                             <div className="mt-2 flex flex-wrap gap-1.5">
                                 {kmSemanalStatus.pending.map((vehicle) => (
-                                    <Badge key={vehicle.placa} variant="outline" className="border-orange-300 bg-white/70 text-orange-950 dark:bg-orange-950/60 dark:text-orange-100">
-                                        {vehicle.placa}{vehicle.veiculo ? ` · ${vehicle.veiculo}` : ''} · {vehicle.missingDates.map((date) => formatDate(date)).join(', ')}
+                                    <Badge key={vehicle.key} variant="outline" className="max-w-full whitespace-normal break-words border-orange-300 bg-white/70 text-orange-950 dark:bg-orange-950/60 dark:text-orange-100">
+                                        {vehicle.placa}{vehicle.veiculo ? ` · ${vehicle.veiculo}` : ''}
+                                        {vehicle.missingDates.length > 0 ? ` · Falta: ${vehicle.missingDates.map((date) => formatDate(date)).join(', ')}` : ''}
+                                        {vehicle.reviewRequired ? ' · Conferir competência das leituras' : ''}
                                     </Badge>
                                 ))}
                             </div>

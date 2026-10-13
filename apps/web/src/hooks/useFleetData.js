@@ -4,6 +4,7 @@ import { loadFaturamentoSources } from '@/lib/faturamentoSources';
 import { loadAbastecimentoSources } from '@/lib/abastecimentoSources';
 import { loadOwnedVehicleRegistry } from '@/lib/ownedVehicleFinanceSources';
 import { loadDocumentPayments } from '@/lib/documentPayments';
+import { loadWeeklyKmSources } from '@/lib/weeklyKmSources';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
 const VEHICLE_LIMITS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=1477905702&tq=select%20A%2CE%2CI';
@@ -71,6 +72,7 @@ export function useFleetData() {
     const abastecimentoRequestRef = useRef(0);
     const ownedFinanceRequestRef = useRef(0);
     const documentPaymentsRequestRef = useRef(0);
+    const weeklyKmRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
         if (loadingRef.current) return;
@@ -105,6 +107,7 @@ export function useFleetData() {
             const abastecimentoRequestId = ++abastecimentoRequestRef.current;
             const ownedFinanceRequestId = ++ownedFinanceRequestRef.current;
             const documentPaymentsRequestId = ++documentPaymentsRequestRef.current;
+            const weeklyKmRequestId = ++weeklyKmRequestRef.current;
             setData((current) => ({
                 ...enrichedJson,
                 viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
@@ -126,7 +129,21 @@ export function useFleetData() {
                 checklistLoaded: current?.checklistLoaded === true,
                 checklistLoading: true,
                 checklistError: null,
+                kmSemanalSource: current?.kmSemanalSource,
+                kmSemanalLoading: true,
+                kmSemanalError: null,
             }));
+            loadWeeklyKmSources()
+                .then((source) => setData((current) => (
+                    current && weeklyKmRequestRef.current === weeklyKmRequestId
+                        ? { ...current, kmSemanalSource: source, kmSemanalLoading: false, kmSemanalError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && weeklyKmRequestRef.current === weeklyKmRequestId
+                        ? { ...current, kmSemanalLoading: false, kmSemanalError: 'Não foi possível confirmar as leituras semanais diretamente na planilha. Os dados anteriores não comprovam que todas as semanas estão regulares; clique em Atualizar.' }
+                        : current
+                )));
             loadAbastecimentoSources()
                 .then((sources) => setData((current) => (
                     current && abastecimentoRequestRef.current === abastecimentoRequestId
