@@ -52,6 +52,11 @@ realizados, justificativa e conferência explícita, com foto/PDF opcional. Não
 consulta ao aplicativo nem concessão integral automática nesse modo: dias válidos
 continuam proporcionais aos dias trabalhados, com responsabilidade histórica em
 Utilização. Fonte, autoria e justificativa ficam nas revisões e relatórios.
+No checklist manual, “Lançar vários dias de uma vez” permite selecionar datas ou
+um intervalo para o mesmo veículo. Os atalhos incluem somente os dias trabalhados
+explicitamente selecionados; não presumem jornadas. Datas/placas já existentes
+são ignoradas sem sobrescrever anexos. O lote só prepara as linhas do formulário:
+o gestor confere os dias e salva depois, mantendo a aprovação humana.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas
