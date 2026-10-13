@@ -89,6 +89,12 @@ No demonstrativo, Justificativa contém apenas textos informados, motivos dos
 critérios, datas legíveis e descrições de pendências/ocorrências. Objetos técnicos,
 IDs, declarações serializadas e programação não são impressos nessa coluna;
 permanecem na base e os comprovantes continuam no Índice de Evidências.
+O Índice de Evidências reproduz as fotos JPG/PNG/GIF anexadas em páginas próprias,
+com motorista/categoria/competência e link clicável para o original. Fotos repetidas
+mantêm todas as referências, mas são incorporadas uma vez. Acima de 4 MB utiliza
+prévia disponível do Drive, identificada como reduzida; PDFs e declarações continuam
+no índice sem serem apresentados como fotos. Mais de 12 MB de imagens bloqueia a
+geração com mensagem explícita, sem omissão silenciosa ou mudança de permissões.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas

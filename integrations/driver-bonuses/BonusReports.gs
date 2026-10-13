@@ -42,6 +42,40 @@ function bonusReportHtml_(title, headers, rows, notes, extra = '', layout = '') 
     return '<td style="border:1px solid #cfe8d5;padding:' + (detailed ? '5px' : '6px') + ';vertical-align:top;' + style + '">' + bonusEscape_(value) + '</td>';
   }).join('') + '</tr>').join('') + '</tbody></table>' + extra.replace(/<\/?(?:html|body)[^>]*>|<meta[^>]*>/g, '') + '</body></html>';
 }
+function bonusEvidenceReportHtml_(records, month) {
+  const rows = [], photos = new Map();
+  records.forEach(row => {
+    const ids = [...new Set([row.evidence?.id, ...(row.details?.evidenceIds || [])].filter(Boolean))];
+    ids.forEach(id => {
+      const file = DriveApp.getFileById(id), name = file.getName(), url = file.getUrl();
+      rows.push([row.driver, row.category, row.month, name, url]);
+      if (['image/jpeg', 'image/png', 'image/gif'].includes(file.getMimeType())) {
+        if (!photos.has(id)) photos.set(id, { file, name, url, references: [] });
+        photos.get(id).references.push(row.driver + ' - ' + row.category + ' - ' + row.month);
+      }
+    });
+    const manual = row.details?.manualAssessment;
+    if (manual) rows.push([row.driver, row.category, row.month, 'Declaração manual conferida - sem arquivo importado', manual.actor + ' · ' + manual.at + ' · Respostas e datas no demonstrativo detalhado.']);
+    const checklist = row.details?.checklistSelection;
+    if (checklist?.source === 'Manual') rows.push([row.driver, 'Checklist manual', row.month, checklist.justification, checklist.actor + ' · ' + checklist.at + ' · Datas e veículos no demonstrativo.']);
+  });
+  let bytesTotal = 0;
+  const gallery = [...photos.values()].map((photo, index) => {
+    let blob = photo.file.getBlob(), preview = false;
+    if (blob.getBytes().length > 4 * 1024 * 1024) {
+      const thumbnail = photo.file.getThumbnail();
+      if (thumbnail) { blob = thumbnail; preview = true; }
+    }
+    const bytes = blob.getBytes(); bytesTotal += bytes.length;
+    if (bytesTotal > 12 * 1024 * 1024) throw new Error('As fotos excedem o limite seguro do PDF. Nenhuma foto foi omitida: reduza o tamanho dos anexos antes de gerar novamente.');
+    const mime = blob.getContentType();
+    if (!['image/jpeg', 'image/png', 'image/gif'].includes(mime)) throw new Error('Não foi possível incorporar a foto ' + photo.name + '. O original foi preservado no Drive.');
+    const link = /^https:\/\/drive\.google\.com\//.test(photo.url) ? '<a href="' + bonusEscape_(photo.url) + '" style="color:#1f7a46;word-break:break-all">' + bonusEscape_(photo.url) + '</a>' : bonusEscape_(photo.url);
+    return '<section style="page-break-before:always;page-break-inside:avoid"><h2 style="color:#1f7a46">Foto ' + (index + 1) + ' - Evidência</h2><p>' + bonusEscape_([...new Set(photo.references)].join(' / ')) + '</p><p><strong>' + bonusEscape_(photo.name) + '</strong></p><p>Original no Drive: ' + link + '</p>' + (preview ? '<p>Prévia reduzida. Consulte a foto original no link acima.</p>' : '') + '<div style="text-align:center"><img alt="' + bonusEscape_(photo.name) + '" src="data:' + mime + ';base64,' + Utilities.base64Encode(bytes) + '" style="max-width:450px;max-height:420px;width:auto;height:auto"></div></section>';
+  }).join('');
+  return bonusReportHtml_('Índice de evidências ' + month, ['Motorista', 'Categoria', 'Competência', 'Original', 'Referência segura'], rows,
+    'Fotos anexadas estão reproduzidas nas páginas seguintes, com link para cada original. Comprovantes em PDF e declarações permanecem identificados no índice. Nenhum acesso no Drive foi alterado.', gallery);
+}
 function bonusSavePdf_(folder, name, html) {
   const file = folder.createFile(Utilities.newBlob(html, 'text/html', name + '.html').getAs('application/pdf').setName(name + '.pdf'));
   return { id: file.getId(), name: file.getName(), url: file.getUrl() };
@@ -91,16 +125,7 @@ function prepareBonusReport(month) {
       return lines;
     });
     files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista ' + month + ' ' + stamp, bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa'], details, notes + ' Valores de critérios não aprovados são provisórios. Os comprovantes constam no Índice de Evidências.', '', 'details')));
-    const evidenceRows = model.records.flatMap(row => {
-      const ids = [...new Set([row.evidence?.id, ...(row.details.evidenceIds || [])].filter(Boolean))];
-      const references = ids.map(id => { const file = DriveApp.getFileById(id); return [row.driver, row.category, row.month, file.getName(), file.getUrl()]; });
-      const manual = row.details.manualAssessment;
-      if (manual) references.push([row.driver, row.category, row.month, 'Declaração manual conferida — sem arquivo importado', manual.actor + ' · ' + manual.at + ' · Respostas e datas no demonstrativo detalhado.']);
-      const checklist = row.details.checklistSelection;
-      if (checklist?.source === 'Manual') references.push([row.driver, 'Checklist manual', row.month, checklist.justification, checklist.actor + ' · ' + checklist.at + ' · Datas e veículos no demonstrativo.']);
-      return references;
-    });
-    files.push(bonusSavePdf_(folder, 'Índice de Evidências ' + month + ' ' + stamp, bonusReportHtml_('Índice de evidências ' + month, ['Motorista', 'Categoria', 'Competência', 'Original', 'Referência segura'], evidenceRows, 'Os arquivos originais permanecem no Drive. Os links exigem a conta autorizada; não são tornados públicos.')));
+    files.push(bonusSavePdf_(folder, 'Índice de Evidências ' + month + ' ' + stamp, bonusEvidenceReportHtml_(model.records, month)));
     const workbook = SpreadsheetApp.create('Conferência Bonificações ' + month + ' ' + stamp);
     DriveApp.getFileById(workbook.getId()).moveTo(folder);
     const sheet = workbook.getSheets()[0]; sheet.setName('Bonificações');
