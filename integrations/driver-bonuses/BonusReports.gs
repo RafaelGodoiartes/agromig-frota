@@ -33,8 +33,14 @@ function bonusReportEmail_(model, month) {
   const htmlBody = '<div style="background:#f3f7f4;padding:24px;font:15px Arial,sans-serif;color:#183f2d"><div style="max-width:640px;margin:auto;background:white;border:1px solid #d4e5d9;border-radius:8px;overflow:hidden"><div style="background:#1f7a46;color:white;padding:22px"><strong style="font-size:24px">AGROMIG</strong><div style="margin-top:8px">Bonificações dos motoristas · ' + bonusEscape_(competence) + '</div></div><div style="padding:24px"><p>Prezados,</p><p>Seguem os relatórios de bonificações dos motoristas referentes a ' + bonusEscape_(competence) + ', com os valores aprovados para conferência e acompanhamento financeiro.</p><table style="width:100%;border-collapse:collapse">' + summary.map((row, i) => '<tr style="background:' + (i === 3 ? '#eef7f0' : 'white') + '"><td style="padding:12px;border-bottom:1px solid #d4e5d9">' + bonusEscape_(row[0]) + '</td><td style="padding:12px;text-align:right;border-bottom:1px solid #d4e5d9;font-weight:bold">' + bonusEscape_(row[1]) + '</td></tr>').join('') + '</table><p style="color:#5b7467;font-size:13px">' + bonusEscape_(note) + ' O detalhamento por motorista e as referências dos comprovantes constam nos anexos.</p><p style="margin-top:28px">Atenciosamente,<br><strong>Gestão de Frotas</strong><br>AGROMIG</p></div></div></div>';
   return { body, htmlBody };
 }
-function bonusReportHtml_(title, headers, rows, notes, extra = '') {
-  return '<html><meta charset="utf-8"><body style="font:11px Arial;color:#163b28"><h1 style="color:#1f7a46">AGROMIG</h1><h2>' + bonusEscape_(title) + '</h2><p>' + bonusEscape_(notes || '') + '</p><table style="border-collapse:collapse;width:100%"><thead><tr>' + headers.map(value => '<th style="background:#1f7a46;color:white;padding:6px;text-align:left">' + bonusEscape_(value) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map(value => '<td style="border:1px solid #cfe8d5;padding:6px;word-break:break-word">' + bonusEscape_(value) + '</td>').join('') + '</tr>').join('') + '</tbody></table>' + extra.replace(/<\/?(?:html|body)[^>]*>|<meta[^>]*>/g, '') + '</body></html>';
+function bonusReportHtml_(title, headers, rows, notes, extra = '', layout = '') {
+  const detailed = layout === 'details';
+  const columns = detailed ? '<colgroup>' + [18, 15, 12, 15, 15, 25].map(width => '<col style="width:' + width + '%">').join('') + '</colgroup>' : '';
+  return '<html><meta charset="utf-8"><body style="font:11px Arial;color:#163b28"><h1 style="color:#1f7a46">AGROMIG</h1><h2>' + bonusEscape_(title) + '</h2><p>' + bonusEscape_(notes || '') + '</p><table style="border-collapse:collapse;width:100%' + (detailed ? ';table-layout:fixed;font-size:10px' : '') + '">' + columns + '<thead><tr>' + headers.map(value => '<th style="background:#1f7a46;color:white;padding:6px;text-align:left">' + bonusEscape_(value) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map((value, index) => {
+    const money = detailed && [3, 4].includes(index) && /^R\$/.test(String(value));
+    const style = money ? 'white-space:nowrap;word-break:normal;text-align:right' : detailed ? 'word-break:normal;overflow-wrap:break-word' : 'word-break:break-word';
+    return '<td style="border:1px solid #cfe8d5;padding:' + (detailed ? '5px' : '6px') + ';vertical-align:top;' + style + '">' + bonusEscape_(value) + '</td>';
+  }).join('') + '</tr>').join('') + '</tbody></table>' + extra.replace(/<\/?(?:html|body)[^>]*>|<meta[^>]*>/g, '') + '</body></html>';
 }
 function bonusSavePdf_(folder, name, html) {
   const file = folder.createFile(Utilities.newBlob(html, 'text/html', name + '.html').getAs('application/pdf').setName(name + '.pdf'));
@@ -84,7 +90,7 @@ function prepareBonusReport(month) {
       if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(calculation.maximumCents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', bonusReportJustification_(row, calculation)]);
       return lines;
     });
-    files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista ' + month + ' ' + stamp, bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa'], details, notes + ' Valores de critérios não aprovados são provisórios. Os comprovantes constam no Índice de Evidências.')));
+    files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista ' + month + ' ' + stamp, bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa'], details, notes + ' Valores de critérios não aprovados são provisórios. Os comprovantes constam no Índice de Evidências.', '', 'details')));
     const evidenceRows = model.records.flatMap(row => {
       const ids = [...new Set([row.evidence?.id, ...(row.details.evidenceIds || [])].filter(Boolean))];
       const references = ids.map(id => { const file = DriveApp.getFileById(id); return [row.driver, row.category, row.month, file.getName(), file.getUrl()]; });

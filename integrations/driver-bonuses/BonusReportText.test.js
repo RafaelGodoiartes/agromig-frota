@@ -28,3 +28,16 @@ test('demonstrativo não serializa objetos na justificativa e conserva assinatur
   assert.doesNotMatch(preparation, /JSON\.stringify/); assert.match(preparation, /bonusReportJustification_/);
   assert.match(source, /function bonusReportFingerprint_/); assert.match(source, /JSON\.stringify\(\{ records:/);
 });
+
+test('demonstrativo reserva largura e impede quebra de valores sem alterar os dados', () => {
+  const headers = ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa'];
+  const rows = [['Pessoa de teste', 'Viagem', 'Aprovado', 'R$ 1.000,00', 'R$ 538,26', 'Texto legível.']];
+  const before = JSON.stringify(rows);
+  const html = ctx.bonusReportHtml_('Teste', headers, rows, '', '', 'details');
+  assert.match(html, /table-layout:fixed/); assert.match(html, /<colgroup>/);
+  assert.equal((html.match(/white-space:nowrap;word-break:normal;text-align:right/g) || []).length, 2);
+  assert.match(html, /R\$ 1\.000,00/); assert.match(html, /R\$ 538,26/);
+  assert.equal(JSON.stringify(rows), before);
+  const standard = ctx.bonusReportHtml_('Outro relatório', headers, rows, '');
+  assert.doesNotMatch(standard, /colgroup|table-layout:fixed|white-space:nowrap/);
+});
