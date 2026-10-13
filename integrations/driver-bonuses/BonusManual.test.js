@@ -100,3 +100,125 @@ test('checklist é consultado diretamente no Epicollect5 e não aceita resultado
   assert.doesNotMatch(html, /renderImports|showMapping|data-page="Importação"/);
   assert.match(html, /Epicollect5/);
 });
+function attachmentContext() {
+  const ctx = context(), uploads = [];
+  ctx.Utilities = { base64Decode: text => Buffer.from(text, 'base64') };
+  ctx.bonusDriver_ = name => ({ name, id: 'TESTE' });
+  ctx.bonusDestination_ = (driver, month, category, destination) => ({ driver, month, category, destination });
+  ctx.bonusUpload_ = (folder, file, excel) => {
+    uploads.push({ folder, file, excel });
+    return { id: 'synthetic-photo-' + uploads.length, name: file.name, url: 'https://example.invalid/private-photo', mimeType: file.mimeType };
+  };
+  return { ctx, uploads };
+}
+const photo = () => ({ name: 'foto-teste.png', mimeType: 'image/png', base64: Buffer.from('synthetic-photo-bytes').toString('base64') });
+function manualChecklist(input, rows = [{ date: '2026-10-01', plate: 'ABC1D23' }]) {
+  input.checklist = { source: 'Manual', reviewed: true, justification: 'Conferência manual do período', rows };
+}
+test('checklist manual funciona em qualquer competência e não consulta Epicollect5', () => {
+  const ctx = context(), { input, data } = sample(); manualChecklist(input);
+  ctx.bonusChecklists_ = () => { throw Error('Não deve consultar o aplicativo no modo Manual'); };
+  const { evidence, result } = evaluate(ctx, input, data);
+  assert.equal(evidence.checklistSelection.source, 'Manual'); assert.equal(evidence.checklistSelection.actor, 'frota@agromig.com.br');
+  assert.equal(result.results[0].cents, 16000); assert.equal(result.provisionalCents, 70000); assert.equal(result.requiresHumanReview, true);
+  assert.match(result.results[0].reason, /Fonte: Manual/);
+  input.month = '2027-02'; input.workedDates = '2027-02-03'; input.checklist.rows[0].date = '2027-02-03';
+  assert.equal(ctx.bonusChecklistEvidence_(input, 'TESTE', input.month).records[0].date, '2027-02-03');
+});
+test('selecionar Manual não concede checklist integral: dias distintos contam proporcionalmente', () => {
+  const ctx = context(), { input, data } = sample(); manualChecklist(input);
+  input.workedDates = '2026-10-01,2026-10-02'; data.assignments[0].to = '2026-10-02';
+  assert.equal(evaluate(ctx, input, data).result.results[0].cents, 8000);
+  input.checklist.rows.push({ date: '2026-10-02', plate: 'ABC1D23' });
+  assert.equal(evaluate(ctx, input, data).result.results[0].cents, 16000);
+  input.checklist.rows = []; assert.equal(evaluate(ctx, input, data).result.results[0].cents, 0);
+  data.assignments = []; input.checklist.rows = [{ date: '2026-10-01', plate: 'ABC1D23' }];
+  const result = evaluate(ctx, input, data).result;
+  assert.equal(result.results[0].cents, 0); assert.ok(result.pending.some(p => /responsabilidade/.test(p)));
+});
+test('modo automático ignora dados manuais postados; consulta incompleta continua pendente', () => {
+  const ctx = context(), { input, data } = sample(); manualChecklist(input); input.checklist.source = 'Epicollect5';
+  ctx.bonusChecklists_ = () => ({ records: [], complete: false });
+  const { evidence, result } = evaluate(ctx, input, data);
+  assert.equal(evidence.checklistSelection.source, 'Epicollect5'); assert.equal(evidence.checklists.length, 0);
+  assert.equal(result.results[0].cents, 0); assert.ok(result.pending.includes('Consulta de checklist incompleta.'));
+});
+test('checklist manual valida conferência, justificativa, data, placa e duplicidade', () => {
+  for (const mutate of [
+    input => { input.checklist.source = 'Outro'; },
+    input => { input.checklist.reviewed = false; },
+    input => { input.checklist.justification = ' '; },
+    input => { input.checklist.rows[0].date = '2026-10-02'; },
+    input => { input.checklist.rows[0].plate = 'XYZ9A99'; },
+    input => { input.checklist.rows.push({ date: '2026-10-01', plate: 'ABC-1D23' }); }
+  ]) {
+    const ctx = context(), { input, data } = sample(); manualChecklist(input); mutate(input);
+    assert.throws(() => evaluate(ctx, input, data));
+  }
+});
+test('foto do checklist manual preserva origem e aparece no índice de evidências', () => {
+  const { ctx, uploads } = attachmentContext(), { input, data } = sample(); manualChecklist(input);
+  input.checklist.rows[0].file = photo();
+  const evidence = evaluate(ctx, input, data).evidence;
+  assert.equal(uploads[0].folder.category, 'KPIs - Checklist');
+  assert.equal(evidence.checklistSelection.categories.Checklist.rows[0].evidence.id, 'synthetic-photo-1');
+  assert.deepEqual(clone(evidence.evidenceIds), ['synthetic-photo-1']);
+  assert.doesNotMatch(JSON.stringify(evidence.checklistSelection), /base64/);
+});
+test('reavaliação grava a fonte escolhida sem alterar registros aprovados', () => {
+  const ctx = context(), { input, data } = sample(); manualChecklist(input);
+  data.records = [{ id: 'synthetic-kpi', category: 'KPIs', driver: 'TESTE', month: '2026-10', status: 'Em análise', rules: clone(vm.runInContext('BONUS_DEFAULT_RULES', ctx)), details: {} }];
+  ctx.bonusMutate_ = (_, fn) => fn(data, 'frota@agromig.com.br');
+  ctx.reevaluateBonus('synthetic-kpi', input); assert.equal(data.records[0].details.checklistSelection.source, 'Manual');
+  assert.equal(data.records[0].details.checklistSnapshot[0].source, 'Manual');
+  input.checklist.source = 'Epicollect5'; ctx.reevaluateBonus('synthetic-kpi', input);
+  assert.equal(data.records[0].details.checklistSelection.source, 'Epicollect5');
+  data.records[0].status = 'Aprovado'; assert.throws(() => ctx.reevaluateBonus('synthetic-kpi', input), /Reabra/);
+});
+test('anexa foto à ocorrência e ao índice de evidências sem guardar base64 na base', () => {
+  const { ctx, uploads } = attachmentContext(), { input, data } = sample();
+  input.manualAssessment.categories.Lavagem.rows[0].file = photo();
+  const { evidence, result } = evaluate(ctx, input, data), row = evidence.washes[0];
+  assert.equal(uploads.length, 1); assert.equal(uploads[0].excel, false);
+  assert.deepEqual(uploads[0].folder, { driver: { name: 'TESTE', id: 'TESTE' }, month: '2026-10', category: 'KPIs - Lavagem', destination: '2026-10-01 - ABC1D23' });
+  assert.equal(row.evidence.id, 'synthetic-photo-1'); assert.equal(row.evidenceId, row.evidence.id);
+  assert.deepEqual(clone(evidence.evidenceIds), ['synthetic-photo-1']);
+  assert.doesNotMatch(JSON.stringify(evidence.manualAssessment), /base64/); assert.equal(result.provisionalCents, 70000);
+});
+test('recalcular sem foto nova preserva somente anexo do registro anterior confiável', () => {
+  const { ctx, uploads } = attachmentContext(), { input } = sample();
+  input.manualAssessment.categories.Lavagem.rows[0].file = photo();
+  const original = ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br');
+  delete input.manualAssessment.categories.Lavagem.rows[0].file;
+  input.manualAssessment.categories.Lavagem.rows[0].keepEvidence = true;
+  input.manualAssessment.categories.Lavagem.rows[0].evidence = { id: 'forged-file', url: 'https://example.invalid/forged' };
+  let next = ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br', original);
+  assert.equal(next.categories.Lavagem.rows[0].evidence.id, 'synthetic-photo-1'); assert.equal(uploads.length, 1);
+  assert.throws(() => ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br'), /Evidência anterior não encontrada/);
+  input.manualAssessment.categories.Lavagem.rows[0].file = photo();
+  next = ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br', original);
+  assert.equal(next.categories.Lavagem.rows[0].evidence.id, 'synthetic-photo-2');
+  assert.equal(original.categories.Lavagem.rows[0].evidence.id, 'synthetic-photo-1');
+});
+test('anexo não pode ser reaproveitado em outra data/placa nem enviado antes de validar dados', () => {
+  const { ctx, uploads } = attachmentContext(), { input } = sample();
+  const previous = { categories: { Lavagem: { rows: [{ date: '2026-10-02', plate: 'ABC1D23', evidence: { id: 'old-other-date' } }] } } };
+  input.manualAssessment.categories.Lavagem.rows[0].keepEvidence = true;
+  assert.throws(() => ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br', previous), /Evidência anterior/);
+  input.manualAssessment.categories.Lavagem.rows[0].file = photo(); delete input.manualAssessment.categories.Multas;
+  assert.throws(() => ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br'));
+  assert.equal(uploads.length, 0);
+});
+test('tipos inválidos e limite total bloqueiam uploads; campos de fotos estão no formulário', () => {
+  const { ctx, uploads } = attachmentContext(), { input } = sample();
+  input.manualAssessment.categories.Lavagem.rows[0].file = { ...photo(), mimeType: 'text/html' };
+  assert.throws(() => ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br'), /Envie foto/);
+  input.manualAssessment.categories.Lavagem.rows[0].file = photo(); yes(input, 'Multas', { file: photo() });
+  ctx.Utilities.base64Decode = () => ({ length: 5 * 1024 * 1024 });
+  assert.throws(() => ctx.bonusManualAssessment_(input, 'TESTE', '2026-10', {}, 'frota@agromig.com.br'), /total de novos anexos/);
+  assert.equal(uploads.length, 0);
+  const html = fs.readFileSync(new URL('DriverBonusForm.html', root), 'utf8');
+  assert.match(html, /Foto \/ documento de evidência/); assert.match(html, /manualEvidenceLinks\(r\)/);
+  assert.match(html, /file:await fileData/);
+  assert.doesNotMatch(fs.readFileSync(new URL('BonusImports.gs', root), 'utf8'), /\|\|=|&&=|\?\?=/, 'Apps Script não suporta atribuição lógica neste projeto');
+});

@@ -39,8 +39,19 @@ com Sim/Não, datas e placas no formulário de KPIs. A conta Frota confirma a
 conferência; autoria, respostas e datas ficam na base assinada e no demonstrativo.
 Uma declaração não é apresentada como arquivo comprobatório. Ausência de resposta
 não equivale a Não. Exceções autorizadas e multas contestadas continuam distintas.
-O checklist permanece consultado diretamente no Epicollect5, com falhas de leitura
-mantidas como pendências. A responsabilidade histórica segue a aba Utilização.
+Cada data/ocorrência permite foto JPG/PNG ou PDF, opcional, guardado na pasta privada
+do motorista/competência/categoria/data-placa. O total de novos anexos por envio é
+8 MB. Os links aparecem na consulta e no índice de evidências dos relatórios.
+Recalcular mantém o anexo anterior da mesma data/placa quando não há arquivo novo;
+IDs enviados pelo navegador nunca autorizam acesso a arquivos arbitrários.
+Uma substituição cria outro arquivo, preservando o original e as revisões.
+O checklist permite escolher Epicollect5 (padrão) ou Manual em qualquer competência,
+inclusive períodos após adoção do aplicativo. No modo automático, falhas de leitura
+continuam pendentes. No modo manual, o gestor informa dias/placas realmente
+realizados, justificativa e conferência explícita, com foto/PDF opcional. Não há
+consulta ao aplicativo nem concessão integral automática nesse modo: dias válidos
+continuam proporcionais aos dias trabalhados, com responsabilidade histórica em
+Utilização. Fonte, autoria e justificativa ficam nas revisões e relatórios.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas

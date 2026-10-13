@@ -109,7 +109,7 @@ function bonusChecklists_(month) {
   }
   return { records, complete };
 }
-function bonusManualAssessment_(input, driver, month, rules, actor) {
+function bonusManualAssessment_(input, driver, month, rules, actor, previousManual) {
   const manual = input.manualAssessment;
   if (!manual) return null;
   if (manual.reviewed !== true) throw new Error('Confirme a conferência das informações lançadas manualmente.');
@@ -136,12 +136,68 @@ function bonusManualAssessment_(input, driver, month, rules, actor) {
     });
     categories[category] = { answer: declaration.answer, rows };
   });
-  return { reviewed: true, actor, at: new Date().toISOString(), categories };
+  const assessment = { reviewed: true, actor, at: new Date().toISOString(), categories };
+  bonusManualAttachments_(assessment, input.manualAssessment, driver, month, previousManual);
+  return assessment;
 }
-function bonusEvidence_(data, driver, month, input, rules) {
-  const checklist = bonusChecklists_(month);
+function bonusManualAttachments_(assessment, submitted, driver, month, previousManual) {
+  const pending = [];
+  let bytes = 0;
+  Object.keys(assessment.categories).forEach(category => {
+    assessment.categories[category].rows.forEach((row, index) => {
+      const source = submitted.categories[category].rows[index];
+      // Only the previous server-side record can authorize reusing an attachment.
+      const previous = previousManual?.categories?.[category]?.rows?.find(item => item.date === row.date && bonusKey_(item.plate) === row.plate);
+      if (source.keepEvidence === true && !source.file && !previous?.evidence?.id) throw new Error('Evidência anterior não encontrada para esta data/veículo. Anexe a foto novamente.');
+      if (source.file) {
+        if (!source.file.base64 || !/^[A-Za-z0-9+/=]+$/.test(source.file.base64) || !['image/jpeg', 'image/png', 'application/pdf'].includes(source.file.mimeType)) throw new Error('Evidência inválida. Envie foto JPG, PNG ou PDF.');
+        if (source.file.base64.length > Math.ceil(8 * 1024 * 1024 / 3) * 4) throw new Error('Cada evidência deve ter até 8 MB.');
+        const size = Utilities.base64Decode(source.file.base64).length;
+        if (!size || size > 8 * 1024 * 1024) throw new Error('Cada evidência deve ter até 8 MB.');
+        bytes += size;
+      }
+      pending.push({ row, file: source.file, previous: source.keepEvidence === true ? previous?.evidence : null });
+    });
+  });
+  if (bytes > 8 * 1024 * 1024) throw new Error('O total de novos anexos deve ter até 8 MB por envio. Salve menos fotos por vez e depois acrescente as demais.');
+  let registeredDriver;
+  pending.forEach(item => {
+    if (item.file) {
+      if (!registeredDriver) registeredDriver = bonusDriver_(driver);
+      const folder = bonusDestination_(registeredDriver, month, 'KPIs - ' + item.row.category, item.row.date + ' - ' + item.row.plate);
+      item.row.evidence = bonusUpload_(folder, item.file, false);
+    } else if (item.previous) item.row.evidence = { ...item.previous };
+    if (item.row.evidence) item.row.evidenceId = item.row.evidence.id;
+  });
+}
+function bonusChecklistEvidence_(input, driver, month, previousChecklist) {
+  const source = input.checklist?.source || 'Epicollect5';
+  if (!['Epicollect5', 'Manual'].includes(source)) throw new Error('Selecione Epicollect5 ou Manual para o checklist.');
+  if (source === 'Epicollect5') {
+    const result = bonusChecklists_(month);
+    return { ...result, selection: { source, queriedAt: new Date().toISOString(), complete: result.complete } };
+  }
+  if (input.checklist.reviewed !== true || !String(input.checklist.justification || '').trim()) throw new Error('Confira os checklists manuais e informe a justificativa da fonte manual.');
+  if (!Array.isArray(input.checklist.rows) || input.checklist.rows.length > 200) throw new Error('Confira as datas do checklist manual.');
+  const days = bonusDays_(input.workedDates, month), plates = String(input.plates || '').split(/[,;\s]+/).filter(Boolean).map(bonusKey_), seen = new Set(), actor = bonusUser_();
+  const rows = input.checklist.rows.map(row => {
+    const date = bonusDate_(row.date), plate = bonusKey_(row.plate), key = date + '|' + plate;
+    if (!days.includes(date) || !plates.includes(plate)) throw new Error('Checklist manual: selecione uma data trabalhada da competência e um veículo utilizado.');
+    if (seen.has(key)) throw new Error('Checklist manual duplicado para a mesma data/veículo.');
+    seen.add(key);
+    return { category: 'Checklist', driver, date, plate, valid: true, confirmed: true, manualVerified: true, source: 'Manual',
+      description: String(row.description || '').slice(0, 1000), review: { actor, at: new Date().toISOString(), decision: 'Checklist conferido manualmente pelo gestor' } };
+  });
+  const selection = { source, reviewed: true, justification: String(input.checklist.justification).trim(), actor, at: new Date().toISOString(), categories: { Checklist: { answer: rows.length ? 'Sim' : 'Não', rows } } };
+  bonusManualAttachments_(selection, { categories: { Checklist: { rows: input.checklist.rows } } }, driver, month, previousChecklist?.source === 'Manual' ? previousChecklist : null);
+  return { records: rows, complete: true, selection };
+}
+function bonusEvidence_(data, driver, month, input, rules, previousManual, previousChecklist) {
+  const files = [...Object.values(input.manualAssessment?.categories || {}).flatMap(category => category.rows || []), ...(input.checklist?.source === 'Manual' ? input.checklist.rows || [] : [])].map(row => row.file).filter(Boolean);
+  if (files.reduce((sum, file) => sum + Math.floor(String(file.base64 || '').length * 3 / 4) - (String(file.base64 || '').match(/=+$/)?.[0].length || 0), 0) > 8 * 1024 * 1024) throw new Error('O total de novos anexos deve ter até 8 MB por envio.');
+  const checklist = bonusChecklistEvidence_(input, driver, month, previousChecklist);
   const operations = data.operations.filter(row => row.date.slice(0, 7) === month);
-  const manual = bonusManualAssessment_(input, driver, month, rules, bonusUser_());
+  const manual = bonusManualAssessment_(input, driver, month, rules, bonusUser_(), previousManual);
   const confirmedImports = data.imports.filter(row => row.month === month && bonusNameKey_(row.driver) === bonusNameKey_(driver) && row.status === 'Confirmada');
   const covered = category => !!manual || (input.coverage?.[category] === true && (confirmedImports.some(row => row.category === category) || (category === 'Lavagem' && operations.some(row => row.category === category)) || (category === 'Multas' && input.noFinesConfirmed === true)));
   // Existing occurrences remain visible; a new declaration never erases historical evidence.
@@ -160,19 +216,20 @@ function bonusEvidence_(data, driver, month, input, rules) {
     washes: rowsFor('Lavagem'), washComplete: covered('Lavagem'),
     fines: rowsFor('Multas'), finesComplete: covered('Multas'),
     manualAssessment: manual,
+    checklistSelection: checklist.selection,
     manualConflicts,
-    coverage: input.coverage, evidenceIds: [...new Set(operations.map(row => row.evidenceId).filter(Boolean))],
+    coverage: input.coverage, evidenceIds: [...new Set([...operations.map(row => row.evidenceId), ...Object.values(manual?.categories || {}).flatMap(category => category.rows.map(row => row.evidenceId)), ...checklist.records.map(row => row.evidenceId)].filter(Boolean))],
     checklistSnapshot: checklist.records };
 }
 function reevaluateBonus(id, input) {
   return bonusMutate_('Reavaliação de KPIs', data => {
     const row = data.records.find(row => row.id === id);
     if (!row || row.category !== 'KPIs' || ['Aprovado', 'Pago'].includes(row.status)) throw new Error('Reabra o registro em análise antes de recalcular.');
-    const evidence = bonusEvidence_(data, row.driver, row.month, input, row.rules);
+    const evidence = bonusEvidence_(data, row.driver, row.month, input, row.rules, row.details.manualAssessment, row.details.checklistSelection);
     row.calculation = bonusEvaluate_({ ...input, driver: row.driver, month: row.month }, evidence, row.rules);
     row.calculation.cents = row.calculation.provisionalCents;
     if (input.justification !== undefined) row.justification = String(input.justification);
-    row.details = { ...row.details, workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, evidenceIds: evidence.evidenceIds, checklistSnapshot: evidence.checklistSnapshot, manualAssessment: evidence.manualAssessment };
+    row.details = { ...row.details, workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, evidenceIds: evidence.evidenceIds, checklistSnapshot: evidence.checklistSnapshot, manualAssessment: evidence.manualAssessment, checklistSelection: evidence.checklistSelection };
     return row;
   });
 }

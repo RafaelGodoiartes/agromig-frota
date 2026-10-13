@@ -133,7 +133,7 @@ function saveDriverBonus(input) {
       const reviewed = bonusEvidence_(data, driver.name, month, input, rules);
       calculation = bonusEvaluate_({ ...input, driver: driver.name }, reviewed, rules);
       calculation.cents = calculation.provisionalCents;
-      details = { workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, coverage: reviewed.coverage, evidenceIds: reviewed.evidenceIds, checklistSnapshot: reviewed.checklistSnapshot, manualAssessment: reviewed.manualAssessment };
+      details = { workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, coverage: reviewed.coverage, evidenceIds: reviewed.evidenceIds, checklistSnapshot: reviewed.checklistSnapshot, manualAssessment: reviewed.manualAssessment, checklistSelection: reviewed.checklistSelection };
     }
     const record = { id: Utilities.getUuid(), duplicateKey, driver: driver.name, driverId: driver.id, month, category: input.category,
       calculation, details, rules: { ...rules }, evidence, justification: String(input.justification || ''), notes: String(input.notes || ''),

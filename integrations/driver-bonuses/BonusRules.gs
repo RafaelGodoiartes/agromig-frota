@@ -59,7 +59,7 @@ function bonusEvaluate_(input, evidence, rules) {
   if (!evidence.checklistComplete) pending.push('Consulta de checklist incompleta.');
   const results = [{ criterion: 'Checklist', maximumCents: rules.checklistCents,
     cents: Math.round(rules.checklistCents * checklistDays.length / days.length),
-    reason: checklistDays.length + ' de ' + days.length + ' dias trabalhados com checklist válido.',
+    reason: checklistDays.length + ' de ' + days.length + ' dias trabalhados com checklist válido. Fonte: ' + (evidence.checklistSelection?.source || 'Epicollect5') + '.',
     missingDates: days.filter(day => !checklistDays.includes(day)) }];
   const movement = (evidence.circulation || []).filter(belongs);
   const irregular = movement.filter(row => ((row.manualVerified && row.outsideHours === true) || (row.time && (row.time < rules.allowedStart || row.time > rules.allowedEnd))) && !row.authorized);
