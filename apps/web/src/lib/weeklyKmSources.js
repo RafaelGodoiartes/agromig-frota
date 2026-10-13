@@ -50,7 +50,7 @@ export async function loadWeeklyKmSources(fetcher = fetch) {
     try {
         const responses = await Promise.all(SOURCES.map(async (source) => {
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${source.gid}&range=${source.range}&headers=0&t=${Date.now()}`;
-            const response = await fetcher(url, { signal: controller.signal, cache: 'no-store' });
+            const response = await fetcher(url, { signal: controller.signal });
             if (!response.ok) throw new Error(`KM Semanal respondeu ${response.status}.`);
             return response.text();
         }));

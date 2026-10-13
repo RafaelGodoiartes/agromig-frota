@@ -107,7 +107,6 @@ test('consulta calendário separado das leituras para evitar perda de datas por 
 test('cada refresh relê três fontes e não usa dados antigos do conector em vez da fonte atual', async () => {
     const seen = [];
     const source = await loadWeeklyKmSources(async (url, options) => {
-        assert.equal(options.cache, 'no-store');
         assert.ok(options.signal);
         seen.push(url);
         return { ok: true, text: async () => url.includes('B2:H3') ? calendarBody : url.includes('gid=1477905702') ? registryBody : weeklyBody };

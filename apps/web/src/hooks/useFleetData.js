@@ -139,9 +139,9 @@ export function useFleetData() {
                         ? { ...current, kmSemanalSource: source, kmSemanalLoading: false, kmSemanalError: null }
                         : current
                 )))
-                .catch(() => setData((current) => (
+                .catch((error) => setData((current) => (
                     current && weeklyKmRequestRef.current === weeklyKmRequestId
-                        ? { ...current, kmSemanalLoading: false, kmSemanalError: 'Não foi possível confirmar as leituras semanais diretamente na planilha. Os dados anteriores não comprovam que todas as semanas estão regulares; clique em Atualizar.' }
+                        ? { ...current, kmSemanalLoading: false, kmSemanalError: `Não foi possível confirmar as leituras semanais diretamente na planilha (${error.message || 'falha de leitura'}). Os dados anteriores não comprovam que todas as semanas estão regulares; clique em Atualizar.` }
                         : current
                 )));
             loadAbastecimentoSources()
