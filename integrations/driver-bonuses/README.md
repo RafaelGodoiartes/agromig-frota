@@ -63,6 +63,13 @@ competência. O preenchimento não salva automaticamente e não presume trabalho
 ou checklist. Em KPIs, os dias trabalhados também podem ser selecionados por
 intervalo dentro da competência, preservando a seleção anterior e permitindo
 desmarcar folgas. A conferência humana deve ser renovada após usar o intervalo.
+Em Registros, a explicação dos KPIs mostra máximo, valor considerado, diferença,
+motivos, datas sem comprovação válida e orientações para conferir cada item.
+São utilizados somente os resultados e pendências salvos na avaliação, sem
+recalcular pela regra atual nem alterar o registro. Falta de atribuição histórica
+não é tratada como prova de checklist não realizado. Ocorrência eliminatória
+explica o zero integral, e pendências gerais continuam bloqueando a aprovação.
+Os atalhos abrem KPIs/Utilização; nunca salvam, aprovam ou garantem R$ 700.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas
