@@ -46,7 +46,7 @@ export function parseWeeklyKmSources(weeklyBody, registryBody, calendarBody) {
 
 export async function loadWeeklyKmSources(fetcher = fetch) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 30000);
     try {
         const responses = await Promise.all(SOURCES.map(async (source) => {
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${source.gid}&range=${source.range}&headers=0&t=${Date.now()}`;

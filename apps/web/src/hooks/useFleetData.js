@@ -79,6 +79,12 @@ export function useFleetData() {
         loadingRef.current = true;
         setLoading(true);
         setError(null);
+        const weeklyKmRequestId = ++weeklyKmRequestRef.current;
+        // Start alongside the main connector, before the heavy dashboard render
+        // and the other background integrations compete for network/CPU time.
+        const weeklyKmPromise = loadWeeklyKmSources()
+            .then((source) => ({ source }))
+            .catch((error) => ({ error }));
         try {
             const url = force ? '/fleet/refresh' : '/fleet';
             const res = await apiServerClient.fetch(url, { method: 'GET' });
@@ -107,7 +113,6 @@ export function useFleetData() {
             const abastecimentoRequestId = ++abastecimentoRequestRef.current;
             const ownedFinanceRequestId = ++ownedFinanceRequestRef.current;
             const documentPaymentsRequestId = ++documentPaymentsRequestRef.current;
-            const weeklyKmRequestId = ++weeklyKmRequestRef.current;
             setData((current) => ({
                 ...enrichedJson,
                 viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
@@ -133,15 +138,12 @@ export function useFleetData() {
                 kmSemanalLoading: true,
                 kmSemanalError: null,
             }));
-            loadWeeklyKmSources()
-                .then((source) => setData((current) => (
+            weeklyKmPromise
+                .then(({ source, error }) => setData((current) => (
                     current && weeklyKmRequestRef.current === weeklyKmRequestId
-                        ? { ...current, kmSemanalSource: source, kmSemanalLoading: false, kmSemanalError: null }
-                        : current
-                )))
-                .catch((error) => setData((current) => (
-                    current && weeklyKmRequestRef.current === weeklyKmRequestId
-                        ? { ...current, kmSemanalLoading: false, kmSemanalError: `Não foi possível confirmar as leituras semanais diretamente na planilha (${error.message || 'falha de leitura'}). Os dados anteriores não comprovam que todas as semanas estão regulares; clique em Atualizar.` }
+                        ? error
+                            ? { ...current, kmSemanalLoading: false, kmSemanalError: 'Não foi possível confirmar as leituras semanais diretamente na planilha. Os dados anteriores não comprovam que todas as semanas estão regulares; clique em Atualizar.' }
+                            : { ...current, kmSemanalSource: source, kmSemanalLoading: false, kmSemanalError: null }
                         : current
                 )));
             loadAbastecimentoSources()
