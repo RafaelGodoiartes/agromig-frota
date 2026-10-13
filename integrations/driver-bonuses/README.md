@@ -85,6 +85,10 @@ Bonificações do Excel usam somente valores confirmados de aprovados/pagos; os
 pendentes ficam em seção/aba própria. O Excel inclui total aprovado numérico.
 E-mail utiliza texto curto e versão HTML verde/branca, com prévia isolada. Gerar
 não envia nem libera e-mail; conta, destinatários, agenda e revisão permanecem.
+No demonstrativo, Justificativa contém apenas textos informados, motivos dos
+critérios, datas legíveis e descrições de pendências/ocorrências. Objetos técnicos,
+IDs, declarações serializadas e programação não são impressos nessa coluna;
+permanecem na base e os comprovantes continuam no Índice de Evidências.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas

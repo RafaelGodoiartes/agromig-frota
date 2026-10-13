@@ -40,6 +40,31 @@ function bonusSavePdf_(folder, name, html) {
   const file = folder.createFile(Utilities.newBlob(html, 'text/html', name + '.html').getAs('application/pdf').setName(name + '.pdf'));
   return { id: file.getId(), name: file.getName(), url: file.getUrl() };
 }
+function bonusReportDateText_(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? String(value).split('-').reverse().join('/') : String(value || '');
+}
+function bonusReportJustification_(row, calculation) {
+  const lines = [], text = value => typeof value === 'string' ? value.trim() : '';
+  if (text(row.justification)) lines.push(text(row.justification));
+  if (text(row.notes)) lines.push('Observações: ' + text(row.notes));
+  if (row.category === 'KPIs') {
+    const selection = row.details?.checklistSelection;
+    if (selection?.source === 'Manual' && text(selection.justification)) lines.push('Checklist manual: ' + text(selection.justification));
+    if (calculation.eliminationSuggested) lines.push('Eliminação dos KPIs indicada por circulação fora do horário, sujeita à decisão humana.');
+    if (calculation.pending?.length) lines.push('Pendências: ' + calculation.pending.filter(value => typeof value === 'string').join(' '));
+    (calculation.occurrences || []).forEach(item => {
+      const description = [text(item.criterion), bonusReportDateText_(item.date), text(item.plate), text(item.reason)].filter(Boolean).join(' - ');
+      if (description) lines.push('Ocorrência: ' + description);
+    });
+    if (!lines.length) lines.push('Valor apurado conforme os critérios apresentados acima.');
+  }
+  return lines.join('\n') || 'Justificativa não informada.';
+}
+function bonusReportCriterionText_(kpi, approved) {
+  const reason = typeof kpi.reason === 'string' ? kpi.reason : 'Motivo não informado.';
+  const dates = (kpi.missingDates || []).map(bonusReportDateText_).filter(Boolean);
+  return (approved ? 'Aprovado. ' : 'Provisório - não aprovado. ') + reason + (dates.length ? '\nDatas sem comprovação válida: ' + dates.join(', ') + '.' : '');
+}
 function prepareBonusReport(month) {
   return bonusMutate_('Preparação de relatório para conferência', data => {
     bonusMonth_(month); const model = bonusReportModel_(data, month);
@@ -55,11 +80,11 @@ function prepareBonusReport(month) {
     files.push(bonusSavePdf_(folder, 'Relatório Consolidado de Bonificações ' + month + ' ' + stamp, bonusReportHtml_('Bonificações aprovadas ' + month, summaryHeaders, summaryRows, notes, pendingHtml)));
     const details = model.records.flatMap(row => {
       const approved = model.approved.includes(row), calculation = approved ? row.approved.calculation || row.calculation : row.calculation;
-      const lines = row.category === 'KPIs' ? (calculation.results || []).map(kpi => [row.driver, row.category + ' / ' + kpi.criterion, row.status, bonusBRL_(kpi.maximumCents), bonusBRL_(calculation.eliminationSuggested ? 0 : kpi.cents), (approved ? 'Aprovado. ' : 'Provisório — não aprovado. ') + kpi.reason + ' ' + (kpi.missingDates || []).join(', ')]) : [[row.driver, row.category, row.status, bonusBRL_(row.calculation.cents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', row.justification + ' ' + JSON.stringify(row.details)]];
-      if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(calculation.maximumCents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', JSON.stringify({ pending: calculation.pending, occurrences: calculation.occurrences, manualAssessment: row.details.manualAssessment, checklistSelection: row.details.checklistSelection, elimination: calculation.eliminationSuggested })]);
+      const lines = row.category === 'KPIs' ? (calculation.results || []).map(kpi => [row.driver, row.category + ' / ' + kpi.criterion, row.status, bonusBRL_(kpi.maximumCents), bonusBRL_(calculation.eliminationSuggested ? 0 : kpi.cents), bonusReportCriterionText_(kpi, approved)]) : [[row.driver, row.category, row.status, bonusBRL_(row.calculation.cents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', bonusReportJustification_(row, calculation)]];
+      if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(calculation.maximumCents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', bonusReportJustification_(row, calculation)]);
       return lines;
     });
-    files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista ' + month + ' ' + stamp, bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa e evidências'], details, notes + ' Valores de critérios não aprovados são provisórios.')));
+    files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista ' + month + ' ' + stamp, bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa'], details, notes + ' Valores de critérios não aprovados são provisórios. Os comprovantes constam no Índice de Evidências.')));
     const evidenceRows = model.records.flatMap(row => {
       const ids = [...new Set([row.evidence?.id, ...(row.details.evidenceIds || [])].filter(Boolean))];
       const references = ids.map(id => { const file = DriveApp.getFileById(id); return [row.driver, row.category, row.month, file.getName(), file.getUrl()]; });
