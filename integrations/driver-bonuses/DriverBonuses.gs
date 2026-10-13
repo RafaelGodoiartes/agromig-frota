@@ -114,7 +114,8 @@ function getDriverBonusesState() {
 function saveDriverBonus(input) {
   return bonusMutate_('Registro de bonificação', data => {
     const driver = bonusDriver_(input.driver), month = bonusMonth_(input.month);
-    const rules = bonusRulesFor_(data.ruleVersions, month);
+    const baseRules = bonusRulesFor_(data.ruleVersions, month);
+    const rules = input.category === 'KPIs' ? bonusDriverKpiRules_(baseRules, data.driverKpiRules, driver.id, month) : baseRules;
     if (!['Viagem', 'Cargo de confiança', 'KPIs'].includes(input.category)) throw new Error('Categoria inválida.');
     const duplicateKey = driver.id + '|' + month + '|' + input.category + (input.category === 'Viagem' ? '|' + bonusKey_(input.request) : '');
     if (data.records.some(row => row.duplicateKey === duplicateKey)) throw new Error('Bonificação duplicada para este motorista/requisição/competência.');
@@ -195,5 +196,27 @@ function saveBonusRules(input) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(rules.allowedStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(rules.allowedEnd) || rules.allowedEnd <= rules.allowedStart) throw new Error('Horário autorizado inválido.');
     if (rules.sendDay !== 10 || rules.sendHour !== 8) throw new Error('O agendador desta versão usa dia 10 às 08h; não altere apenas a tela.');
     data.ruleVersions.push({ from, rules }); return rules;
+  });
+}
+function saveDriverKpiRule(input) {
+  return bonusMutate_('Configuração individual de KPIs', (data, actor) => {
+    const driver = bonusDriver_(input.driver), from = bonusMonth_(input.from), amount = bonusNumber_(input.maximum);
+    if (amount === null || amount <= 0 || !Number.isSafeInteger(Math.round(amount * 100)) || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.000001 || !String(input.justification || '').trim()) throw new Error('Informe teto em reais, com até duas casas decimais, e justificativa.');
+    const rule = { id: Utilities.getUuid(), driverId: driver.id, driver: driver.name, from, maximumCents: Math.round(amount * 100), method: 'Proporção dos critérios existentes', justification: String(input.justification).trim(), actor, at: new Date().toISOString() };
+    if (!data.driverKpiRules) data.driverKpiRules = [];
+    const latest = [...data.driverKpiRules].reverse().find(row => row.driverId === driver.id && row.from === from);
+    if (latest?.maximumCents === rule.maximumCents) throw new Error('Esse teto já está configurado para o motorista e vigência informados.');
+    data.driverKpiRules.push(rule);
+    const updated = [], preserved = [];
+    data.records.filter(row => row.category === 'KPIs' && row.driverId === driver.id && row.month >= from).forEach(row => {
+      if (!['Rascunho', 'Aguardando documentos', 'Em análise', 'Aguardando aprovação'].includes(row.status)) { preserved.push(row.id); return; }
+      const rules = bonusDriverKpiRules_(row.rules, data.driverKpiRules, driver.id, row.month);
+      const previous = { rules: row.rules, calculation: row.calculation };
+      row.calculation = bonusRepriceKpi_(row.calculation, rules); row.rules = rules;
+      if (!row.actions) row.actions = [];
+      row.actions.push({ action: 'Teto individual de KPIs atualizado', actor, at: rule.at, ruleId: rule.id, justification: rule.justification, previous });
+      updated.push(row.id);
+    });
+    return { rule, updated, preserved };
   });
 }

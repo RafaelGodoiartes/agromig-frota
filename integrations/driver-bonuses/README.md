@@ -70,6 +70,13 @@ recalcular pela regra atual nem alterar o registro. Falta de atribuição histó
 não é tratada como prova de checklist não realizado. Ocorrência eliminatória
 explica o zero integral, e pendências gerais continuam bloqueando a aprovação.
 Os atalhos abrem KPIs/Utilização; nunca salvam, aprovam ou garantem R$ 700.
+Configurações permite um teto individual por motorista e vigência, na base privada
+assinada. Os cinco critérios mantêm seus pesos proporcionais; a distribuição de
+centavos soma exatamente o teto. Isso não é adicional fixo nem afeta viagens,
+cargo de confiança ou outros motoristas. O novo teto atualiza somente KPIs abertos
+na vigência, preservando o cálculo anterior, motivos, pendências, anexos e status.
+KPIs aprovados/pagos/rejeitados não são alterados. Novos registros e reavaliações
+aplicam a vigência individual; a aprovação humana continua obrigatória.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas

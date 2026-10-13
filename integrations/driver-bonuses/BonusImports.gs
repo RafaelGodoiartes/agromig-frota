@@ -225,8 +225,10 @@ function reevaluateBonus(id, input) {
   return bonusMutate_('Reavaliação de KPIs', data => {
     const row = data.records.find(row => row.id === id);
     if (!row || row.category !== 'KPIs' || ['Aprovado', 'Pago'].includes(row.status)) throw new Error('Reabra o registro em análise antes de recalcular.');
-    const evidence = bonusEvidence_(data, row.driver, row.month, input, row.rules, row.details.manualAssessment, row.details.checklistSelection);
-    row.calculation = bonusEvaluate_({ ...input, driver: row.driver, month: row.month }, evidence, row.rules);
+    const rules = bonusDriverKpiRules_(row.rules, data.driverKpiRules, row.driverId || bonusNameKey_(row.driver), row.month);
+    const evidence = bonusEvidence_(data, row.driver, row.month, input, rules, row.details.manualAssessment, row.details.checklistSelection);
+    row.calculation = bonusEvaluate_({ ...input, driver: row.driver, month: row.month }, evidence, rules);
+    row.rules = rules;
     row.calculation.cents = row.calculation.provisionalCents;
     if (input.justification !== undefined) row.justification = String(input.justification);
     row.details = { ...row.details, workedDates: input.workedDates, washDates: input.washDates, plates: input.plates, evidenceIds: evidence.evidenceIds, checklistSnapshot: evidence.checklistSnapshot, manualAssessment: evidence.manualAssessment, checklistSelection: evidence.checklistSelection };

@@ -46,6 +46,33 @@ function bonusResponsible_(driver, plate, date, assignments) {
 function bonusRulesFor_(versions, month) {
   return versions.filter(row => row.from <= month).sort((a, b) => b.from.localeCompare(a.from))[0]?.rules || BONUS_DEFAULT_RULES;
 }
+const BONUS_KPI_FIELDS = Object.freeze({ Checklist: 'checklistCents', 'Circulação': 'circulationCents', Velocidade: 'speedCents', Lavagem: 'washCents', Multas: 'finesCents' });
+function bonusDriverKpiRules_(rules, versions, driverId, month) {
+  const selected = [...(versions || [])].reverse().filter(row => row.driverId === driverId && row.from <= month).sort((a, b) => b.from.localeCompare(a.from))[0];
+  if (!selected) return { ...rules };
+  const base = rules.driverKpiAdjustment?.baseWeights || Object.fromEntries(Object.values(BONUS_KPI_FIELDS).map(key => [key, rules[key]]));
+  const maximum = Object.values(base).reduce((sum, cents) => sum + cents, 0), target = selected.maximumCents;
+  if (!Number.isSafeInteger(target) || target <= 0 || !Number.isSafeInteger(maximum) || maximum <= 0 || Object.values(base).some(cents => !Number.isSafeInteger(cents) || cents < 0 || !Number.isSafeInteger(cents * target))) throw new Error('Valores da regra individual de KPIs inválidos.');
+  // Largest remainders preserve the original criterion proportions and the exact ceiling in cents.
+  const parts = Object.values(BONUS_KPI_FIELDS).map((key, index) => ({ key, index, cents: Math.floor(base[key] * target / maximum), remainder: base[key] * target % maximum }));
+  const remainder = target - parts.reduce((sum, part) => sum + part.cents, 0);
+  [...parts].sort((a, b) => b.remainder - a.remainder || a.index - b.index).slice(0, remainder).forEach(part => part.cents++);
+  return { ...rules, ...Object.fromEntries(parts.map(part => [part.key, part.cents])), driverKpiAdjustment: { driverId, from: selected.from, maximumCents: target, ruleId: selected.id, baseWeights: { ...base } } };
+}
+function bonusRepriceKpi_(calculation, rules) {
+  if (!Array.isArray(calculation?.results) || calculation.results.length !== 5 || new Set(calculation.results.map(row => row.criterion)).size !== 5) throw new Error('Recalcule a avaliação de KPIs: detalhamento incompleto.');
+  const results = calculation.results.map(row => {
+    const maximum = rules[BONUS_KPI_FIELDS[row.criterion]];
+    if (!Number.isSafeInteger(maximum) || !Number.isSafeInteger(row.maximumCents) || row.maximumCents < 0 || !Number.isSafeInteger(row.cents) || row.cents < 0 || row.cents > row.maximumCents) throw new Error('Recalcule a avaliação de KPIs: valores inconsistentes.');
+    let cents;
+    if (row.criterion === 'Checklist' && Array.isArray(calculation.days) && calculation.days.length && Array.isArray(calculation.checklistDays)) cents = Math.round(maximum * calculation.checklistDays.length / calculation.days.length);
+    else cents = row.maximumCents ? Math.round(maximum * row.cents / row.maximumCents) : 0;
+    if (cents > maximum) throw new Error('Recalcule a avaliação de KPIs: dias inconsistentes.');
+    return { ...row, maximumCents: maximum, cents };
+  });
+  const beforeEliminationCents = results.reduce((sum, row) => sum + row.cents, 0), cents = calculation.eliminationSuggested ? 0 : beforeEliminationCents;
+  return { ...calculation, results, maximumCents: results.reduce((sum, row) => sum + row.maximumCents, 0), beforeEliminationCents, provisionalCents: cents, cents };
+}
 function bonusEvaluate_(input, evidence, rules) {
   const days = bonusDays_(input.workedDates, input.month);
   const plates = String(input.plates || '').split(/[,;\s]+/).filter(Boolean).map(bonusKey_);
