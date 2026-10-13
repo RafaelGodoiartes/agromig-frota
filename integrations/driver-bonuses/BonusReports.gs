@@ -6,20 +6,35 @@ function bonusReportFingerprint_(data, month) {
 }
 function bonusReportModel_(data, month) {
   const records = data.records.filter(row => row.month === month);
-  const approved = records.filter(row => ['Aprovado', 'Pago'].includes(row.status) && row.approved);
+  const approved = records.filter(row => ['Aprovado', 'Pago'].includes(row.status));
+  if (approved.some(row => !Number.isSafeInteger(row.approved?.cents) || row.approved.cents < 0)) throw new Error('Há registro aprovado sem valor confirmado válido. Confira o registro antes de gerar o relatório.');
   const groups = {};
   records.forEach(row => {
-    if (!groups[row.driverId]) groups[row.driverId] = { driver: row.driver, tripCents: 0, trustCents: 0, kpiCents: 0, totalCents: 0 };
+    const driverId = row.driverId || bonusNameKey_(row.driver);
+    if (!groups[driverId]) groups[driverId] = { driver: row.driver, tripCents: 0, trustCents: 0, kpiCents: 0, totalCents: 0, approvedCount: 0 };
     if (!approved.includes(row)) return;
     const key = row.category === 'Viagem' ? 'tripCents' : row.category === 'Cargo de confiança' ? 'trustCents' : 'kpiCents';
-    groups[row.driverId][key] += row.approved.cents; groups[row.driverId].totalCents += row.approved.cents;
+    if (!['Viagem', 'Cargo de confiança', 'KPIs'].includes(row.category)) throw new Error('Categoria de bonificação aprovada não reconhecida.');
+    groups[driverId][key] += row.approved.cents; groups[driverId].totalCents += row.approved.cents; groups[driverId].approvedCount++;
   });
   const rows = Object.values(groups), totalCents = rows.reduce((sum, row) => sum + row.totalCents, 0);
   if (totalCents !== approved.reduce((sum, row) => sum + row.approved.cents, 0)) throw new Error('Totais divergentes. O relatório não será enviado.');
-  return { rows, records, approved, totalCents, pending: records.filter(row => !['Aprovado', 'Pago', 'Rejeitado'].includes(row.status)), status: records.length === 0 ? 'PENDENTE — sem registros' : approved.length === records.length ? 'APROVADO' : approved.length ? 'PARCIALMENTE APROVADO' : 'PENDENTE' };
+  return { rows, approvedRows: rows.filter(row => row.approvedCount > 0), records, approved, totalCents, pending: records.filter(row => !['Aprovado', 'Pago', 'Rejeitado'].includes(row.status)), status: records.length === 0 ? 'PENDENTE — sem registros' : approved.length === records.length ? 'APROVADO' : approved.length ? 'PARCIALMENTE APROVADO' : 'PENDENTE' };
 }
-function bonusReportHtml_(title, headers, rows, notes) {
-  return '<html><meta charset="utf-8"><body style="font:11px Arial;color:#163b28"><h1 style="color:#1f7a46">AGROMIG</h1><h2>' + bonusEscape_(title) + '</h2><p>' + bonusEscape_(notes || '') + '</p><table style="border-collapse:collapse;width:100%"><thead><tr>' + headers.map(value => '<th style="background:#1f7a46;color:white;padding:6px;text-align:left">' + bonusEscape_(value) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map(value => '<td style="border:1px solid #cfe8d5;padding:6px;word-break:break-word">' + bonusEscape_(value) + '</td>').join('') + '</tr>').join('') + '</tbody></table></body></html>';
+function bonusReportPreview_(data, month) {
+  const model = bonusReportModel_(data, month);
+  return { month, totalCents: model.totalCents, approvedCount: model.approved.length, approvedRows: model.approvedRows, pending: model.pending.map(row => ({ driver: row.driver, category: row.category, status: row.status, cents: row.calculation?.cents })), status: model.status };
+}
+function bonusReportEmail_(model, month) {
+  const competence = month.slice(5) + '/' + month.slice(0, 4), sums = category => model.approved.filter(row => row.category === category).reduce((sum, row) => sum + row.approved.cents, 0);
+  const summary = [['Viagens', bonusBRL_(sums('Viagem'))], ['Cargo de confiança', bonusBRL_(sums('Cargo de confiança'))], ['KPIs', bonusBRL_(sums('KPIs'))], ['Total aprovado', bonusBRL_(model.totalCents)]];
+  const note = model.pending.length ? model.pending.length + ' registro(s) aguardam regularização ou aprovação e não integram o total.' : 'Não há registros pendentes nesta competência.';
+  const body = 'Prezados,\n\nSeguem os relatórios de bonificações dos motoristas referentes a ' + competence + ', com os valores aprovados para conferência e acompanhamento financeiro.\n\n' + summary.map(row => row[0] + ': ' + row[1]).join('\n') + '\n\n' + note + ' O detalhamento por motorista e as referências dos comprovantes constam nos anexos.\n\nAtenciosamente,\nGestão de Frotas\nAGROMIG';
+  const htmlBody = '<div style="background:#f3f7f4;padding:24px;font:15px Arial,sans-serif;color:#183f2d"><div style="max-width:640px;margin:auto;background:white;border:1px solid #d4e5d9;border-radius:8px;overflow:hidden"><div style="background:#1f7a46;color:white;padding:22px"><strong style="font-size:24px">AGROMIG</strong><div style="margin-top:8px">Bonificações dos motoristas · ' + bonusEscape_(competence) + '</div></div><div style="padding:24px"><p>Prezados,</p><p>Seguem os relatórios de bonificações dos motoristas referentes a ' + bonusEscape_(competence) + ', com os valores aprovados para conferência e acompanhamento financeiro.</p><table style="width:100%;border-collapse:collapse">' + summary.map((row, i) => '<tr style="background:' + (i === 3 ? '#eef7f0' : 'white') + '"><td style="padding:12px;border-bottom:1px solid #d4e5d9">' + bonusEscape_(row[0]) + '</td><td style="padding:12px;text-align:right;border-bottom:1px solid #d4e5d9;font-weight:bold">' + bonusEscape_(row[1]) + '</td></tr>').join('') + '</table><p style="color:#5b7467;font-size:13px">' + bonusEscape_(note) + ' O detalhamento por motorista e as referências dos comprovantes constam nos anexos.</p><p style="margin-top:28px">Atenciosamente,<br><strong>Gestão de Frotas</strong><br>AGROMIG</p></div></div></div>';
+  return { body, htmlBody };
+}
+function bonusReportHtml_(title, headers, rows, notes, extra = '') {
+  return '<html><meta charset="utf-8"><body style="font:11px Arial;color:#163b28"><h1 style="color:#1f7a46">AGROMIG</h1><h2>' + bonusEscape_(title) + '</h2><p>' + bonusEscape_(notes || '') + '</p><table style="border-collapse:collapse;width:100%"><thead><tr>' + headers.map(value => '<th style="background:#1f7a46;color:white;padding:6px;text-align:left">' + bonusEscape_(value) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map(value => '<td style="border:1px solid #cfe8d5;padding:6px;word-break:break-word">' + bonusEscape_(value) + '</td>').join('') + '</tr>').join('') + '</tbody></table>' + extra.replace(/<\/?(?:html|body)[^>]*>|<meta[^>]*>/g, '') + '</body></html>';
 }
 function bonusSavePdf_(folder, name, html) {
   const file = folder.createFile(Utilities.newBlob(html, 'text/html', name + '.html').getAs('application/pdf').setName(name + '.pdf'));
@@ -30,17 +45,21 @@ function prepareBonusReport(month) {
     bonusMonth_(month); const model = bonusReportModel_(data, month);
     if (!model.records.length) throw new Error('Não há bonificações cadastradas nessa competência.');
     const folder = bonusFolder_(bonusFolder_(bonusRoot_(), 'Relatórios de Bonificações'), month);
+    const reportId = Utilities.getUuid(), at = new Date().toISOString(), stamp = Utilities.formatDate(new Date(at), 'America/Sao_Paulo', 'yyyyMMdd-HHmmss') + '-' + reportId.slice(0, 8);
     const files = [], summaryHeaders = ['Motorista', 'Viagens aprovadas', 'Cargo aprovado', 'KPIs aprovados', 'Total aprovado'];
-    const summaryRows = model.rows.map(row => [row.driver, bonusBRL_(row.tripCents), bonusBRL_(row.trustCents), bonusBRL_(row.kpiCents), bonusBRL_(row.totalCents)]);
+    const summaryRows = model.approvedRows.map(row => [row.driver, bonusBRL_(row.tripCents), bonusBRL_(row.trustCents), bonusBRL_(row.kpiCents), bonusBRL_(row.totalCents)]);
     summaryRows.push(['TOTAL', '', '', '', bonusBRL_(model.totalCents)]);
-    const notes = 'Competência ' + month + '. Situação: ' + model.status + '. ' + model.pending.length + ' registro(s) pendente(s), excluídos dos valores aprovados. Não é ordem de pagamento.';
-    files.push(bonusSavePdf_(folder, 'Relatório Consolidado de Bonificações', bonusReportHtml_('Bonificações ' + month, summaryHeaders, summaryRows, notes)));
+    const notes = 'Competência ' + month + '. Gerado em ' + Utilities.formatDate(new Date(at), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm:ss') + '. Situação: ' + model.status + '. ' + model.approved.length + ' registro(s) aprovado(s) ou pago(s). ' + model.pending.length + ' registro(s) pendente(s), excluídos dos valores aprovados. Não é ordem de pagamento.';
+    const pendingRows = model.pending.map(row => [row.driver, row.category, row.status, bonusBRL_(row.calculation?.cents), 'Não aprovado']);
+    const pendingHtml = model.pending.length ? bonusReportHtml_('Pendentes — não incluídos no total aprovado', ['Motorista', 'Categoria', 'Status', 'Valor provisório', 'Situação'], pendingRows, 'Escrever Aprovado na justificativa não altera o status do registro.') : '';
+    files.push(bonusSavePdf_(folder, 'Relatório Consolidado de Bonificações ' + month + ' ' + stamp, bonusReportHtml_('Bonificações aprovadas ' + month, summaryHeaders, summaryRows, notes, pendingHtml)));
     const details = model.records.flatMap(row => {
-      const lines = row.category === 'KPIs' ? row.calculation.results.map(kpi => [row.driver, row.category + ' / ' + kpi.criterion, row.status, bonusBRL_(kpi.maximumCents), bonusBRL_(row.calculation.eliminationSuggested ? 0 : kpi.cents), kpi.reason + ' ' + (kpi.missingDates || []).join(', ')]) : [[row.driver, row.category, row.status, bonusBRL_(row.calculation.cents), bonusBRL_(row.approved?.cents || 0), row.justification + ' ' + JSON.stringify(row.details)]];
-      if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(row.calculation.maximumCents), bonusBRL_(row.approved?.cents || 0), JSON.stringify({ pending: row.calculation.pending, occurrences: row.calculation.occurrences, manualAssessment: row.details.manualAssessment, checklistSelection: row.details.checklistSelection, elimination: row.calculation.eliminationSuggested, actions: row.actions })]);
+      const approved = model.approved.includes(row), calculation = approved ? row.approved.calculation || row.calculation : row.calculation;
+      const lines = row.category === 'KPIs' ? (calculation.results || []).map(kpi => [row.driver, row.category + ' / ' + kpi.criterion, row.status, bonusBRL_(kpi.maximumCents), bonusBRL_(calculation.eliminationSuggested ? 0 : kpi.cents), (approved ? 'Aprovado. ' : 'Provisório — não aprovado. ') + kpi.reason + ' ' + (kpi.missingDates || []).join(', ')]) : [[row.driver, row.category, row.status, bonusBRL_(row.calculation.cents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', row.justification + ' ' + JSON.stringify(row.details)]];
+      if (row.category === 'KPIs') lines.push([row.driver, 'Total KPIs', row.status, bonusBRL_(calculation.maximumCents), approved ? bonusBRL_(row.approved.cents) : 'Não aprovado', JSON.stringify({ pending: calculation.pending, occurrences: calculation.occurrences, manualAssessment: row.details.manualAssessment, checklistSelection: row.details.checklistSelection, elimination: calculation.eliminationSuggested })]);
       return lines;
     });
-    files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista', bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Previsto/provisório', 'Concedido/provisório', 'Justificativa e evidências'], details, notes + ' Valores de critérios não aprovados são provisórios.')));
+    files.push(bonusSavePdf_(folder, 'Demonstrativo Detalhado por Motorista ' + month + ' ' + stamp, bonusReportHtml_('Demonstrativo individual ' + month, ['Motorista', 'Critério', 'Status', 'Referência', 'Valor apurado', 'Justificativa e evidências'], details, notes + ' Valores de critérios não aprovados são provisórios.')));
     const evidenceRows = model.records.flatMap(row => {
       const ids = [...new Set([row.evidence?.id, ...(row.details.evidenceIds || [])].filter(Boolean))];
       const references = ids.map(id => { const file = DriveApp.getFileById(id); return [row.driver, row.category, row.month, file.getName(), file.getUrl()]; });
@@ -50,24 +69,29 @@ function prepareBonusReport(month) {
       if (checklist?.source === 'Manual') references.push([row.driver, 'Checklist manual', row.month, checklist.justification, checklist.actor + ' · ' + checklist.at + ' · Datas e veículos no demonstrativo.']);
       return references;
     });
-    files.push(bonusSavePdf_(folder, 'Índice de Evidências', bonusReportHtml_('Índice de evidências ' + month, ['Motorista', 'Categoria', 'Competência', 'Original', 'Referência segura'], evidenceRows, 'Os arquivos originais permanecem no Drive. Os links exigem a conta autorizada; não são tornados públicos.')));
-    const workbook = SpreadsheetApp.create('Conferência Bonificações ' + month);
+    files.push(bonusSavePdf_(folder, 'Índice de Evidências ' + month + ' ' + stamp, bonusReportHtml_('Índice de evidências ' + month, ['Motorista', 'Categoria', 'Competência', 'Original', 'Referência segura'], evidenceRows, 'Os arquivos originais permanecem no Drive. Os links exigem a conta autorizada; não são tornados públicos.')));
+    const workbook = SpreadsheetApp.create('Conferência Bonificações ' + month + ' ' + stamp);
     DriveApp.getFileById(workbook.getId()).moveTo(folder);
     const sheet = workbook.getSheets()[0]; sheet.setName('Bonificações');
-    const values = [['Motorista', 'Viagens aprovadas', 'Cargo aprovado', 'KPIs aprovados', 'Total aprovado'], ...model.rows.map(row => [row.driver, row.tripCents / 100, row.trustCents / 100, row.kpiCents / 100, row.totalCents / 100])];
+    const values = [summaryHeaders, ...model.approvedRows.map(row => [row.driver, row.tripCents / 100, row.trustCents / 100, row.kpiCents / 100, row.totalCents / 100]), ['TOTAL APROVADO', '', '', '', model.totalCents / 100]];
     sheet.getRange(1, 1, values.length, 5).setValues(values.map(row => row.map(value => typeof value === 'string' && /^[=+@-]/.test(value) ? "'" + value : value)));
     sheet.getRange(1, 1, 1, 5).setBackground('#1f7a46').setFontColor('#ffffff').setFontWeight('bold'); sheet.setFrozenRows(1);
     if (values.length > 1) sheet.getRange(2, 2, values.length - 1, 4).setNumberFormat('"R$" #,##0.00');
-    sheet.autoResizeColumns(1, 5); SpreadsheetApp.flush();
+    sheet.autoResizeColumns(1, 5);
+    const pendingSheet = workbook.insertSheet('Pendentes');
+    const pendingValues = [['Motorista', 'Categoria', 'Status', 'Valor provisório', 'Situação'], ...model.pending.map(row => [row.driver, row.category, row.status, Number.isSafeInteger(row.calculation?.cents) ? row.calculation.cents / 100 : '', 'Não incluído no total aprovado'])];
+    pendingSheet.getRange(1, 1, pendingValues.length, 5).setValues(pendingValues.map(row => row.map(value => typeof value === 'string' && /^[=+@-]/.test(value) ? "'" + value : value)));
+    pendingSheet.getRange(1, 1, 1, 5).setBackground('#1f7a46').setFontColor('#ffffff').setFontWeight('bold'); pendingSheet.setFrozenRows(1);
+    if (pendingValues.length > 1) pendingSheet.getRange(2, 4, pendingValues.length - 1, 1).setNumberFormat('"R$" #,##0.00');
+    pendingSheet.autoResizeColumns(1, 5); SpreadsheetApp.flush();
     const response = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + workbook.getId() + '/export?mimeType=application%2Fvnd.openxmlformats-officedocument.spreadsheetml.sheet', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
     if (response.getResponseCode() !== 200) throw new Error('Não foi possível gerar o Excel. Os PDFs foram preservados para conferência; o envio permanece bloqueado.');
-    const excel = folder.createFile(response.getBlob().setName('Planilha de Bonificações.xlsx'));
+    const excel = folder.createFile(response.getBlob().setName('Planilha de Bonificações ' + month + ' ' + stamp + '.xlsx'));
     files.push({ id: excel.getId(), name: excel.getName(), url: excel.getUrl() });
-    const categorySum = category => model.approved.filter(row => row.category === category).reduce((sum, row) => sum + row.approved.cents, 0);
-    const body = 'Prezados(as),\n\nEncaminhamos, para conhecimento, conferência e acompanhamento financeiro, o relatório mensal de bonificações dos motoristas, referente à competência ' + month + '.\n\nA apuração utiliza os registros e evidências do Sistema de Gestão de Frotas.\n\n1. RESUMO FINANCEIRO\nMotoristas avaliados: ' + model.rows.length + '\nViagens aprovadas: ' + bonusBRL_(categorySum('Viagem')) + '\nCargo de confiança aprovado: ' + bonusBRL_(categorySum('Cargo de confiança')) + '\nKPIs aprovados: ' + bonusBRL_(categorySum('KPIs')) + '\nTotal de bonificações aprovadas: ' + bonusBRL_(model.totalCents) + '\n\n2. DETALHAMENTO POR MOTORISTA\nA composição individual, requisições, indicadores, valores concedidos e justificativas está nos anexos.\n\n3. NÃO CONFORMIDADES E JUSTIFICATIVAS\nOcorrências e eventual bloqueio integral dos KPIs estão detalhados no demonstrativo, sujeitos à aprovação registrada.\n\n4. DOCUMENTAÇÃO E EVIDÊNCIAS\nOs originais permanecem no Drive com acesso restrito. Os anexos incluem um índice de evidências.\n\n5. SITUAÇÃO DA APURAÇÃO\nStatus: ' + model.status + '\nPendências: ' + (model.pending.map(row => row.driver + ' — ' + row.category + ' — ' + row.status).join('; ') || 'NENHUMA') + '\n\nSolicitamos a conferência das informações para os procedimentos administrativos e financeiros pertinentes.\n\nAtenciosamente,\nGestão de Frotas — AGROMIG\nRelatório gerado pelo Sistema de Gestão de Frotas e conferido antes do envio.';
-    const report = { id: Utilities.getUuid(), month, fingerprint: bonusReportFingerprint_(data, month), files,
+    const email = bonusReportEmail_(model, month);
+    const report = { id: reportId, month, fingerprint: bonusReportFingerprint_(data, month), files,
       subject: 'AGROMIG | Relatório Mensal de Bonificações dos Motoristas | Competência ' + month.slice(5) + '/' + month.slice(0, 4),
-      body, recipients: [...BONUS_RECIPIENTS], status: 'Aguardando conferência', at: new Date().toISOString() };
+      body: email.body, htmlBody: email.htmlBody, approvedTotalCents: model.totalCents, approvedCount: model.approved.length, recipients: [...BONUS_RECIPIENTS], status: 'Aguardando conferência', at };
     data.reports.push(report); return report;
   });
 }
@@ -110,7 +134,7 @@ function bonusDispatch_(month, manual) {
     data.mailHistory.push(history); bonusPersist_(data, 'Início de envio conferido', BONUS_USER);
     // Persist before sending: an interrupted/ambiguous send is never retried blindly.
     // MailApp requires send permission only, never mailbox read/delete access.
-    MailApp.sendEmail({ to: report.recipients.join(','), subject: report.subject, body: report.body, attachments, name: 'Gestão de Frotas — AGROMIG' });
+    MailApp.sendEmail({ to: report.recipients.join(','), subject: report.subject, body: report.body, htmlBody: report.htmlBody || undefined, attachments, name: 'Gestão de Frotas — AGROMIG' });
     history.status = 'Enviado'; history.providerNote = 'Envio aceito pelo Google; entrega ao destinatário não confirmada. Identificador interno: ' + history.id; report.status = 'Enviado';
     bonusPersist_(data, 'Envio aceito pelo Google', BONUS_USER); return history;
   } finally { lock.releaseLock(); }

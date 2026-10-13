@@ -107,7 +107,11 @@ function bonusPortal_() {
 }
 function getDriverBonusesState() {
   bonusUser_(); const state = bonusStore_();
+  const months = [...new Set([...state.records.map(row => row.month), ...state.reports.map(row => row.month)])], fingerprints = {};
+  months.forEach(month => { fingerprints[month] = bonusReportFingerprint_(state, month); });
   return { ...state, fileId: undefined, signature: undefined, drivers: bonusDrivers_(), vehicles: bonusVehicles_(), account: BONUS_USER, recipients: BONUS_RECIPIENTS,
+    reportPreviews: Object.fromEntries(months.map(month => { try { return [month, bonusReportPreview_(state, month)]; } catch (error) { return [month, { month, error: error.message }]; } })),
+    reports: state.reports.map(report => ({ ...report, isCurrent: report.fingerprint === fingerprints[report.month] })),
     records: state.records.map(record => ({ ...record, nextStatuses: bonusNextStatuses_(record.status), approvalBlockers: bonusApprovalBlockers_(record) })),
     schedulerEnabled: PropertiesService.getScriptProperties().getProperty('BONUS_SCHEDULER_OWNER') === BONUS_USER };
 }

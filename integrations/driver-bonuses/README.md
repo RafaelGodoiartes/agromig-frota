@@ -77,6 +77,14 @@ cargo de confiança ou outros motoristas. O novo teto atualiza somente KPIs aber
 na vigência, preservando o cálculo anterior, motivos, pendências, anexos e status.
 KPIs aprovados/pagos/rejeitados não são alterados. Novos registros e reavaliações
 aplicam a vigência individual; a aprovação humana continua obrigatória.
+Relatórios exibe a prévia atual dos aprovados, separados dos pendentes. Arquivos
+gerados têm competência/data/hora/identificador e aparecem do mais recente para
+o mais antigo; a geração abre o novo conjunto. A assinatura indica relatórios
+desatualizados e impede conferência/envio após alterações. PDF consolidado e aba
+Bonificações do Excel usam somente valores confirmados de aprovados/pagos; os
+pendentes ficam em seção/aba própria. O Excel inclui total aprovado numérico.
+E-mail utiliza texto curto e versão HTML verde/branca, com prévia isolada. Gerar
+não envia nem libera e-mail; conta, destinatários, agenda e revisão permanecem.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas
