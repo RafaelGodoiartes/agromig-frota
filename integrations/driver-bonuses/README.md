@@ -57,6 +57,12 @@ um intervalo para o mesmo veículo. Os atalhos incluem somente os dias trabalhad
 explicitamente selecionados; não presumem jornadas. Datas/placas já existentes
 são ignoradas sem sobrescrever anexos. O lote só prepara as linhas do formulário:
 o gestor confere os dias e salva depois, mantendo a aprovação humana.
+Em Utilização, data inicial/final registram um único intervalo inclusivo de
+responsabilidade, com resumo da quantidade de dias e atalho para preencher a
+competência. O preenchimento não salva automaticamente e não presume trabalho
+ou checklist. Em KPIs, os dias trabalhados também podem ser selecionados por
+intervalo dentro da competência, preservando a seleção anterior e permitindo
+desmarcar folgas. A conferência humana deve ser renovada após usar o intervalo.
 Declarações contraditórias com ocorrências anteriores bloqueiam a aprovação até
 conferência; registros aprovados/pagos não são recalculados sem reabertura.
 Em Registros, “Alterar status” abre um formulário com as próximas etapas permitidas
