@@ -114,9 +114,9 @@ export function summarizeWeeklyKm(data = {}, now = new Date()) {
         const count = expectedDates.filter((date) => readingAt(date) !== null).length;
         const exempt = entry && entry >= lastWeekStart && entry <= lastDate && count < 2;
         const missingDates = exempt ? [] : dueDates.filter((date) => (!entry || entry <= date) && readingAt(date) === null);
-        const reviewRequired = !exempt && source?.mixed && dueDates.length > 0 && (!entry || entry <= today)
-            && matches.some((row) => row.leituras?.some((value) => weeklyReading(value) !== null));
-        if (missingDates.length || reviewRequired) pending.push({ ...vehicle, missingDates, reviewRequired: Boolean(reviewRequired) });
+        // An uncertain competence is a separate data-quality warning, not
+        // evidence that the driver failed to submit an otherwise filled week.
+        if (missingDates.length) pending.push({ ...vehicle, missingDates });
         const futureDates = stale ? [] : expectedDates.filter((date) => date > today && readingAt(date) !== null);
         if (futureDates.length) review.push({ ...vehicle, futureDates });
     }

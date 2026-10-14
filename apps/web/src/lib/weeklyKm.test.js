@@ -123,16 +123,33 @@ test('falha da consulta aparece no resumo, nunca é apresentada como tudo regula
     assert.throws(() => parseWeeklyKmSources('<html>Login</html>', registryBody, calendarBody), /inválida/);
 });
 
-test('mistura confirmada não oculta veículos preenchidos e não apaga nem reatribui leituras', () => {
+test('mistura de competências gera aviso separado, sem pendência falsa para veículo que enviou KM', () => {
     const source = parseWeeklyKmSources(weeklyBody, registryBody, calendarBody);
     source.mixed = true;
     source.rows[0].leituras = [100, 110, 120, 130, null];
     const before = JSON.stringify(source);
     const status = summarizeWeeklyKm({ kmSemanalSource: source }, now);
-    assert.equal(status.pending.length, 1);
-    assert.equal(status.pending[0].reviewRequired, true);
-    assert.deepEqual(status.pending[0].missingDates, []);
+    assert.equal(status.pending.length, 0);
+    assert.equal(status.review.length, 1);
+    assert.match(status.warnings[0], /meses diferentes/);
     assert.equal(JSON.stringify(source), before);
     source.mixed = false;
     assert.equal(summarizeWeeklyKm({ kmSemanalSource: source }, now).pending.length, 0);
+});
+
+test('em outubro, só semanas realmente vazias contam: futuro preenchido não quita o passado nem condena o veículo regular', () => {
+    const source = parseWeeklyKmSources(weeklyBody, registryBody, calendarBody);
+    source.mixed = true;
+    source.rows = [
+        { placa: 'AAA1B23', leituras: [100, 120, 130, 140, null] },
+        { placa: 'BBB2C34', leituras: [100, null, 130, 140, null] },
+        { placa: 'CCC3D45', leituras: [100, 120, null, null, null] },
+    ];
+    source.vehicles = source.rows.map((row) => vehicle(row.placa));
+    const status = summarizeWeeklyKm({ kmSemanalSource: source }, new Date('2026-10-14T12:00:00Z'));
+    assert.deepEqual(status.pending.map((row) => row.placa), ['BBB2C34']);
+    assert.deepEqual(status.pending[0].missingDates, ['2026-10-12']);
+    assert.deepEqual(status.review.map((row) => row.placa), ['AAA1B23', 'BBB2C34']);
+    source.rows[1].leituras[1] = 125;
+    assert.equal(summarizeWeeklyKm({ kmSemanalSource: source }, new Date('2026-10-14T12:00:00Z')).pending.length, 0);
 });

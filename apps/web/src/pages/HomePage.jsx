@@ -844,7 +844,7 @@ export default function HomePage() {
                         </AlertTitle>
                         <AlertDescription className="text-xs">
                             <p>
-                                Leituras faltantes ou com competência a conferir em {kmSemanalStatus.monthLabel}:
+                                Faltam leituras das semanas vencidas de {kmSemanalStatus.monthLabel} para:
                             </p>
                             <p className="mt-1">Conferência de todos os {kmSemanalStatus.total} veículos/equipamentos, sem limitar a lista pelos filtros do painel.</p>
                             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -852,7 +852,6 @@ export default function HomePage() {
                                     <Badge key={vehicle.key} variant="outline" className="max-w-full whitespace-normal break-words border-orange-300 bg-white/70 text-orange-950 dark:bg-orange-950/60 dark:text-orange-100">
                                         {vehicle.placa}{vehicle.veiculo ? ` · ${vehicle.veiculo}` : ''}
                                         {vehicle.missingDates.length > 0 ? ` · Falta: ${vehicle.missingDates.map((date) => formatDate(date)).join(', ')}` : ''}
-                                        {vehicle.reviewRequired ? ' · Conferir competência das leituras' : ''}
                                     </Badge>
                                 ))}
                             </div>
