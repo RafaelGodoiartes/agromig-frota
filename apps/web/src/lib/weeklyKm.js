@@ -3,6 +3,10 @@ const plateKey = (value) => {
     return text.startsWith('#') ? '' : text.replace(/[^A-Z0-9]/g, '');
 };
 
+// Exceção solicitada pela gestão: dispensa apenas o aviso de envio semanal,
+// sem remover o veículo, suas leituras ou os avisos de conferência.
+const weeklyPendingExemptPlates = new Set(['UAD4J51']);
+
 export function weeklyReading(value) {
     if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;
     const raw = String(value ?? '').trim();
@@ -116,7 +120,7 @@ export function summarizeWeeklyKm(data = {}, now = new Date()) {
         const missingDates = exempt ? [] : dueDates.filter((date) => (!entry || entry <= date) && readingAt(date) === null);
         // An uncertain competence is a separate data-quality warning, not
         // evidence that the driver failed to submit an otherwise filled week.
-        if (missingDates.length) pending.push({ ...vehicle, missingDates });
+        if (missingDates.length && !weeklyPendingExemptPlates.has(vehicle.key)) pending.push({ ...vehicle, missingDates });
         const futureDates = stale ? [] : expectedDates.filter((date) => date > today && readingAt(date) !== null);
         if (futureDates.length) review.push({ ...vehicle, futureDates });
     }

@@ -8,6 +8,21 @@ const dates = ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', null];
 const vehicle = (placa, dataEntrada = null) => ({ placa, veiculo: 'Veículo', dataEntrada });
 const dataset = (rows, vehicles = rows.map((row) => vehicle(row.placa))) => ({ kmRodado: rows, veiculos: vehicles, kmSemanalDatas: dates });
 
+test('UAD4J51 é dispensada somente do aviso de pendência semanal, preservando dados e demais veículos', () => {
+    const data = dataset([
+        { placa: ' uad-4j51 ', leituras: [null, null, 130, null] },
+        { placa: 'AAA1B23', leituras: [] },
+    ], [vehicle('UAD4J51'), vehicle('AAA1B23')]);
+    const before = JSON.stringify(data);
+    const status = summarizeWeeklyKm(data, now);
+    assert.equal(status.total, 2);
+    assert.deepEqual(status.pending.map((row) => row.placa), ['AAA1B23']);
+    assert.deepEqual(status.pending[0].missingDates, ['2026-10-05', '2026-10-12']);
+    assert.deepEqual(status.review.map((row) => row.placa), ['UAD4J51']);
+    assert.equal(JSON.stringify(data), before);
+    assert.equal(summarizeWeeklyKm(dataset([], [vehicle('UAD4J51')]), now).pending.length, 0);
+});
+
 test('verifica cada semana vencida, mesmo com situação mensal dentro da franquia', () => {
     const data = dataset([
         { placa: 'AAA1B23', leituras: [100, null, 130, 140], situacao: 'DENTRO DA FRANQUIA' },
