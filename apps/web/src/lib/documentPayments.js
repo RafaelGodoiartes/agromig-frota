@@ -4,6 +4,7 @@ import { moneyCents } from './ownedVehicleFinance.js';
 const text = (value) => String(value ?? '').trim();
 const key = (value) => text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export const DOCUMENT_PAYMENTS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=202610081&range=A1:E&headers=1';
+export const DOCUMENT_PAYMENTS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/edit?gid=202610081#gid=202610081';
 
 export function parseDocumentPayments(body) {
     const match = body.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);\s*$/);
@@ -53,6 +54,8 @@ export function summarizeDocumentPayments(payments = [], vehicles = [], filters 
         if ((filters.periodStart || filters.periodEnd) && (!row.date || (filters.periodStart && row.date < filters.periodStart) || (filters.periodEnd && row.date > filters.periodEnd))) return false;
         if (filters.placa && filters.placa !== 'all' && key(row.plate || row.vehicle) !== key(filters.placa)) return false;
         if (filters.projeto && filters.projeto !== 'all' && row.project !== filters.projeto) return false;
+        if (filters.posse && filters.posse !== 'all' && row.possession !== filters.posse) return false;
+        if (filters.documento && filters.documento !== 'all' && key(row.document) !== key(filters.documento)) return false;
         return !q || key(`${row.vehicle} ${row.provider} ${row.document} ${row.project}`).includes(q);
     });
     const sum = (possession) => rows.filter((row) => !possession || row.possession === possession).reduce((total, row) => total + (row.amountCents ?? 0), 0);

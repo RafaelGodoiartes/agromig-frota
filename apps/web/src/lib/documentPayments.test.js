@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDocumentPayments, summarizeDocumentPayments, loadDocumentPayments } from './documentPayments.js';
+import { DOCUMENT_PAYMENTS_SHEET_URL, parseDocumentPayments, summarizeDocumentPayments, loadDocumentPayments } from './documentPayments.js';
 
 const headers = ['DATA DO PAGAMENTO', 'PRESTADOR DE SERVIÇO', 'VEÍCULO / PLACA', 'TIPO DE DOCUMENTAÇÃO', 'VALOR DO SERVIÇO (R$)'];
 const body = (rows, cols = headers) => `google.visualization.Query.setResponse(${JSON.stringify({ status: 'ok', table: { cols: cols.map((label) => ({ label })), rows: rows.map((values) => ({ c: values.map((v) => ({ v })) })) } })});`;
@@ -28,6 +28,44 @@ test('separa próprios, locados e não classificados sem duplicar veículos nem 
 test('respeita período, placa normalizada, projeto e busca', () => {
     const rows = parseDocumentPayments(body([['30/09/2026', 'P', 'AAA1B23', 'CRLV', 10], ['08/10/2026', 'P', 'AAA1B23', 'Laudo', 20], ['08/10/2026', 'P', 'BBB2C34', 'Laudo', 30]]));
     assert.equal(summarizeDocumentPayments(rows, vehicles, { periodStart: '2026-10-01', periodEnd: '2026-10-31', placa: 'aaa-1b23', projeto: 'CEC III' }, 'laudo').totalCents, 2000);
+});
+
+test('subcategoria financeira filtra por posse, documento e limites inclusivos de período sem alterar a base', () => {
+    const rows = parseDocumentPayments(body([
+        ['01/10/2026', 'P', 'AAA1B23', 'CRLV', 100],
+        ['31/10/2026', 'P', 'AAA1B23', 'Laudo de opacidade', 200],
+        ['15/10/2026', 'P', 'BBB2C34', 'CRLV', 300],
+        ['01/11/2026', 'P', 'AAA1B23', 'CRLV', 400],
+        ['15/10/2026', 'P', 'Sem cadastro', 'CRLV', 50],
+    ]));
+    const before = JSON.stringify(rows);
+    const period = { periodStart: '2026-10-01', periodEnd: '2026-10-31' };
+    assert.equal(summarizeDocumentPayments(rows, vehicles, period).totalCents, 65000);
+    assert.equal(summarizeDocumentPayments(rows, vehicles, { ...period, posse: 'Próprio' }).totalCents, 30000);
+    assert.equal(summarizeDocumentPayments(rows, vehicles, { ...period, posse: 'Locado' }).totalCents, 30000);
+    assert.equal(summarizeDocumentPayments(rows, vehicles, { ...period, posse: 'Sem classificação' }).totalCents, 5000);
+    assert.equal(summarizeDocumentPayments(rows, vehicles, { ...period, posse: 'Próprio', documento: 'crlv' }).totalCents, 10000);
+    assert.equal(summarizeDocumentPayments(rows, vehicles, { ...period, documento: 'LAUDO DE OPACIDADE' }).totalCents, 20000);
+    assert.equal(summarizeDocumentPayments(rows, vehicles, { periodStart: '2026-11-01', periodEnd: '2026-10-01' }).rows.length, 0);
+    assert.equal(JSON.stringify(rows), before);
+});
+
+test('atualização relê a fonte exclusiva e reflete novos custos sem duplicar consultas anteriores', async () => {
+    const urls = [];
+    let amount = 100;
+    const fetcher = async (url) => {
+        urls.push(url);
+        return { ok: true, text: async () => body([['21/10/2026', 'P', 'AAA1B23', 'CRLV', amount]]) };
+    };
+    const first = await loadDocumentPayments(fetcher);
+    amount = 250.50;
+    const second = await loadDocumentPayments(fetcher);
+    assert.equal(summarizeDocumentPayments(first, vehicles).totalCents, 10000);
+    assert.equal(summarizeDocumentPayments(second, vehicles).totalCents, 25050);
+    assert.equal(second.length, 1);
+    assert.equal(urls.length, 2);
+    assert.ok(urls.every((url) => url.includes('gid=202610081') && /&t=\d+/.test(url)));
+    assert.ok(DOCUMENT_PAYMENTS_SHEET_URL.endsWith('#gid=202610081'));
 });
 test('cadastro ausente, posse conflitante e valores inválidos não são classificados arbitrariamente', () => {
     const rows = parseDocumentPayments(body([['', 'P', 'AAA1B23', 'CRLV', 'erro'], ['08/10/2026', 'P', 'AAA1B23', 'CRLV', 0], ['08/10/2026', 'P', 'AAA1B23', 'CRLV', 100]]));

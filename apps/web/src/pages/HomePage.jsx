@@ -13,6 +13,7 @@ import { useFleetData } from '@/hooks/useFleetData';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -30,7 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ptBR } from 'date-fns/locale';
 import apiServerClient from '@/lib/apiServerClient';
 import { driverNameKey, summarizeChecklistDrivers } from '@/lib/checklistDrivers';
-import { summarizeDocumentPayments } from '@/lib/documentPayments';
+import { DOCUMENT_PAYMENTS_SHEET_URL, summarizeDocumentPayments } from '@/lib/documentPayments';
 import { DEFAULT_FUEL_ITEMS, abastecimentoCategory, abastecimentoUnit, changeAbastecimentoCategory, isFuelConsumption, mergeAbastecimentoRows, uniqueOptions } from '@/lib/abastecimentoTypes';
 import {
     FATURAMENTO_EQUIPMENT,
@@ -1675,6 +1676,64 @@ function OwnedVehiclesFinanceView({ data, period }) {
 }
 
 function FaturamentoView({ data }) {
+    return <Tabs defaultValue="resumo" className="space-y-4">
+        <TabsList aria-label="Subcategorias de faturamento" className="h-auto w-full justify-start flex-wrap gap-1 bg-green-50 border border-green-200 p-1.5">
+            <TabsTrigger value="resumo" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Visão geral</TabsTrigger>
+            <TabsTrigger value="documentacao" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><FileCheck className="h-4 w-4" />Custos de documentação</TabsTrigger>
+        </TabsList>
+        <TabsContent value="resumo"><FaturamentoOverview data={data} /></TabsContent>
+        <TabsContent value="documentacao"><DocumentCostsFinanceView data={data} /></TabsContent>
+    </Tabs>;
+}
+
+function DocumentCostsFinanceView({ data }) {
+    const initialFilters = { periodStart: '', periodEnd: '', placa: 'all', posse: 'all', documento: 'all' };
+    const [filters, setFilters] = useState(initialFilters);
+    const [search, setSearch] = useState('');
+    const registry = data.cadastroFinanceiro || data.veiculos || [];
+    const vehicleOptions = useMemo(() => uniqueOptions(summarizeDocumentPayments(data.pagamentosDocumentacao || [], registry).rows.map((row) => row.plate || row.vehicle)), [data.pagamentosDocumentacao, registry]);
+    const documentOptions = useMemo(() => uniqueOptions((data.pagamentosDocumentacao || []).map((row) => row.document)), [data.pagamentosDocumentacao]);
+    const invalidPeriod = filters.periodStart && filters.periodEnd && filters.periodStart > filters.periodEnd;
+    const changeFilter = (field, value) => setFilters((current) => ({ ...current, [field]: value }));
+    const shortcut = (kind) => {
+        const now = new Date();
+        let from = '', to = '';
+        if (kind === 'month') {
+            from = localIsoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+            to = localIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+        } else if (kind === 'previous') {
+            from = localIsoDate(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+            to = localIsoDate(new Date(now.getFullYear(), now.getMonth(), 0));
+        } else if (kind === 'year') {
+            from = localIsoDate(new Date(now.getFullYear(), 0, 1));
+            to = localIsoDate(new Date(now.getFullYear(), 11, 31));
+        }
+        setFilters((current) => ({ ...current, periodStart: from, periodEnd: to }));
+    };
+    return <section className="space-y-4" aria-label="Custos de documentação da frota">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-lg font-semibold text-[#1f6b3d]">Custos de documentação</h2><p className="text-sm text-muted-foreground">Lance os serviços na planilha exclusiva e consulte os custos aqui. Estes valores não são misturados aos custos de manutenção.</p></div>
+            <Button asChild variant="outline" className="gap-2"><a href={DOCUMENT_PAYMENTS_SHEET_URL} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" />Abrir planilha de lançamentos</a></Button>
+        </div>
+        <Card className="p-4 space-y-3 bg-[#f8fcf9] border-[#cfe8d5]">
+            <div className="flex flex-wrap items-end gap-3">
+                <Field label="Data inicial do serviço"><Input aria-label="Data inicial do serviço" type="date" value={filters.periodStart} onChange={(event) => changeFilter('periodStart', event.target.value)} className="w-full sm:w-44" /></Field>
+                <Field label="Data final do serviço"><Input aria-label="Data final do serviço" type="date" value={filters.periodEnd} onChange={(event) => changeFilter('periodEnd', event.target.value)} className="w-full sm:w-44" /></Field>
+                <div className="flex flex-wrap gap-1.5">{[['month', 'Este mês'], ['previous', 'Mês anterior'], ['year', 'Este ano'], ['all', 'Todo período']].map(([value, label]) => <Button key={value} type="button" size="sm" variant="outline" onClick={() => shortcut(value)}>{label}</Button>)}</div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                <Field label="Veículo / placa"><Select value={filters.placa} onValueChange={(value) => changeFilter('placa', value)}><SelectTrigger aria-label="Veículo dos custos de documentação"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos os veículos</SelectItem>{vehicleOptions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></Field>
+                <Field label="Tipo de posse"><Select value={filters.posse} onValueChange={(value) => changeFilter('posse', value)}><SelectTrigger aria-label="Tipo de posse dos custos de documentação"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem>{['Próprio', 'Locado', 'Sem classificação'].map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></Field>
+                <Field label="Tipo de documentação"><Select value={filters.documento} onValueChange={(value) => changeFilter('documento', value)}><SelectTrigger aria-label="Tipo de documentação dos custos"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos os documentos</SelectItem>{documentOptions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></Field>
+                <Field label="Buscar prestador, veículo ou documento"><Input aria-label="Buscar custos de documentação" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Digite para buscar…" /></Field>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">Custos de toda a frota, pela data do serviço. Após lançar na planilha, use Atualizar no topo do painel.</p><Button type="button" variant="ghost" size="sm" onClick={() => { setFilters(initialFilters); setSearch(''); }}>Limpar filtros</Button></div>
+        </Card>
+        {invalidPeriod ? <Alert variant="destructive"><AlertTitle>Período inválido</AlertTitle><AlertDescription>A data inicial não pode ser posterior à data final.</AlertDescription></Alert> : <DocumentPaymentSummary data={data} filters={filters} search={search} />}
+    </section>;
+}
+
+function FaturamentoOverview({ data }) {
     const [period, setPeriod] = useState({ from: '', to: '' });
     const [equipment, setEquipment] = useState(FATURAMENTO_EQUIPMENT.ALL);
     const sourceReady = Array.isArray(data?.viagensLTU5A25) && Array.isArray(data?.locacoesRetroescavadeira);
@@ -2089,7 +2148,7 @@ function DocumentPaymentSummary({ data, filters, search }) {
     const available = Array.isArray(data.pagamentosDocumentacao);
     const classified = !data.cadastroFinanceiroLoading && !data.cadastroFinanceiroError;
     return <section className="rounded-xl border border-green-200 bg-green-50/40 p-4 space-y-4">
-        <div><h3 className="font-semibold text-[#1f6b3d]">Custos de documentação</h3><p className="text-xs text-muted-foreground">Fonte: Pagamento de Documentação · período pela data do serviço e separação pelo tipo de posse no Cadastro de Veículos. Respeita veículo, projeto e busca.</p></div>
+        <div><h3 className="font-semibold text-[#1f6b3d]">Custos de documentação</h3><p className="text-xs text-muted-foreground">Fonte: Custos de Documentação · período pela data do serviço e separação pelo tipo de posse no Cadastro de Veículos. Respeita os filtros selecionados.</p></div>
         {data.pagamentosDocumentacaoLoading && <p role="status" className="text-sm">Atualizando pagamentos…</p>}
         {data.pagamentosDocumentacaoError && <p role="alert" className="text-sm text-amber-800">{data.pagamentosDocumentacaoError} {available ? 'Valores da última consulta concluída.' : 'Valores indisponíveis.'}</p>}
         {!classified && <p role="status" className="text-sm text-amber-800">{data.cadastroFinanceiroError || 'Atualizando a classificação dos veículos…'}</p>}
