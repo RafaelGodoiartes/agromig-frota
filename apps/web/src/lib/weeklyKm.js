@@ -5,7 +5,7 @@ const plateKey = (value) => {
 
 // Exceção solicitada pela gestão: dispensa apenas o aviso de envio semanal,
 // sem remover o veículo, suas leituras ou os avisos de conferência.
-const weeklyPendingExemptPlates = new Set(['UAD4J51']);
+const weeklyPendingExemptPlates = new Set(['UAD4J51', 'HHH6567', 'RBR3C25']);
 
 export function weeklyReading(value) {
     if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;

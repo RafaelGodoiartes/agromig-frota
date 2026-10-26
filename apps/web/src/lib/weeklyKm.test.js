@@ -23,6 +23,23 @@ test('UAD4J51 é dispensada somente do aviso de pendência semanal, preservando 
     assert.equal(summarizeWeeklyKm(dataset([], [vehicle('UAD4J51')]), now).pending.length, 0);
 });
 
+test('HHH6567 e RBR3C25 não geram cobrança semanal, inclusive na virada do mês', () => {
+    const data = dataset([
+        { placa: ' hhh-6567 ', leituras: [] },
+        { placa: 'rbr-3c25', leituras: [] },
+        { placa: 'UAD4J51', leituras: [] },
+        { placa: 'AAA1B23', leituras: [] },
+    ]);
+    const before = JSON.stringify(data);
+    for (const date of ['2026-10-26T12:00:00Z', '2026-11-09T12:00:00Z']) {
+        const status = summarizeWeeklyKm(data, new Date(date));
+        assert.equal(status.total, 4);
+        assert.deepEqual(status.pending.map((row) => row.placa), ['AAA1B23']);
+    }
+    assert.equal(JSON.stringify(data), before);
+    assert.equal(summarizeWeeklyKm(dataset([], [vehicle('HHH6567'), vehicle('RBR3C25')]), now).pending.length, 0);
+});
+
 test('verifica cada semana vencida, mesmo com situação mensal dentro da franquia', () => {
     const data = dataset([
         { placa: 'AAA1B23', leituras: [100, null, 130, 140], situacao: 'DENTRO DA FRANQUIA' },
