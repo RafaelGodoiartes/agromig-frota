@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(web, '../..');
+const integration = path.join(root, 'integrations/fleet-billing');
+const rules = fs.readFileSync(path.join(web, 'src/lib/billingMeasurements.js'), 'utf8').replace('export const FleetBilling', 'var FleetBilling');
+fs.writeFileSync(path.join(integration, 'BillingRules.gs'), '// Generated from apps/web/src/lib/billingMeasurements.js. Do not hand-edit.\n' + rules);
+let html = fs.readFileSync(path.join(root, 'dist/apps/web/billing.html'), 'utf8');
+html = html.replace(/(?:src|href)="(\/agromig-frota\/[^" ]+)"/g, (_, asset) => `${_.startsWith('src') ? 'src' : 'href'}="https://rafaelgodoiartes.github.io${asset}"`);
+html = html.replace('</head>', '<script>window.FLEET_BILLING_FRAME = <?!= JSON.stringify(frameId) ?>;</script></head>');
+fs.writeFileSync(path.join(integration, 'FleetBillingPortal.html'), '<!-- Generated from the built billing.html; includes no customer data. -->\n' + html);
+console.log('BillingRules.gs and FleetBillingPortal.html generated.');

@@ -46,6 +46,7 @@ import VehicleDocumentDialog from '@/components/VehicleDocumentDialog';
 import VehicleTagDialog from '@/components/VehicleTagDialog';
 import VehicleInstallmentSummary from '@/components/VehicleInstallmentSummary';
 import DriverBonusesView from '@/components/DriverBonusesView';
+import FleetBillingWorkspace from '@/components/FleetBillingWorkspace';
 import { monthlyInstallmentExpense } from '@/lib/vehicleInstallments';
 import { launchPlateKey, mergeLaunchVehicles, registrationVehicle, selectRegisteredVehicle } from '@/lib/launchVehicles';
 import { summarizeWeeklyKm } from '@/lib/weeklyKm';
@@ -1676,11 +1677,13 @@ function OwnedVehiclesFinanceView({ data, period }) {
 }
 
 function FaturamentoView({ data }) {
-    return <Tabs defaultValue="resumo" className="space-y-4">
+    return <Tabs defaultValue="medicoes" className="space-y-4">
         <TabsList aria-label="Subcategorias de faturamento" className="h-auto w-full justify-start flex-wrap gap-1 bg-green-50 border border-green-200 p-1.5">
+            <TabsTrigger value="medicoes" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Projetos e medições</TabsTrigger>
             <TabsTrigger value="resumo" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Visão geral</TabsTrigger>
             <TabsTrigger value="documentacao" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><FileCheck className="h-4 w-4" />Custos de documentação</TabsTrigger>
         </TabsList>
+        <TabsContent value="medicoes"><FleetBillingWorkspace /></TabsContent>
         <TabsContent value="resumo"><FaturamentoOverview data={data} /></TabsContent>
         <TabsContent value="documentacao"><DocumentCostsFinanceView data={data} /></TabsContent>
     </Tabs>;

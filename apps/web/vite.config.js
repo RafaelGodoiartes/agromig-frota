@@ -298,7 +298,9 @@ if (window.navigation && window.self !== window.top) {
 
 const addTransformIndexHtml = {
 	name: 'add-transform-index-html',
-	transformIndexHtml(html) {
+	transformIndexHtml(html, context) {
+		// The authenticated finance frame sends only its explicit layout messages.
+		if (context.path === '/billing.html') return html;
 		const tags = [
 			{
 				tag: 'script',
@@ -405,6 +407,7 @@ export default defineConfig({
 	},
 	build: {
 		rollupOptions: {
+			input: { main: path.resolve(__dirname, 'index.html'), billing: path.resolve(__dirname, 'billing.html') },
 			external: [
 				'@babel/parser',
 				'@babel/traverse',
