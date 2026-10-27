@@ -48,8 +48,9 @@ export default function BillingMeasurementsView() {
     useEffect(() => { setPage(0); }, [filters, measurements]);
     useEffect(() => {
         let scheduled;
-        const observer = new ResizeObserver(() => { clearTimeout(scheduled); scheduled = setTimeout(() => communicate('fleetBillingResize', { height: document.documentElement.scrollHeight }), 100); });
-        observer.observe(document.body);
+        const content = document.getElementById('root');
+        const observer = new ResizeObserver(() => { clearTimeout(scheduled); scheduled = setTimeout(() => communicate('fleetBillingResize', { height: Math.ceil(content.getBoundingClientRect().height) }), 100); });
+        observer.observe(content);
         return () => { observer.disconnect(); clearTimeout(scheduled); };
     }, []);
     const openProject = (row = null) => {
