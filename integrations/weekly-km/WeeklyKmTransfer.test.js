@@ -9,20 +9,28 @@ const clone = value => structuredClone(value);
 function fixture(month = '2026-10', today = '2026-11-03') {
   let nextId = 1, clearCount = 0;
   const sheets = [], props = new Map(), triggers = [], logs = [];
-  let date = today, hook = null, failPrepare = false;
+  let date = today, hook = null, failPrepare = false, coerceLogDates = false;
   class Range {
     constructor(sheet, r, c, h = 1, w = 1) { Object.assign(this, { sheet, r, c, h, w }); }
     getValues() { return Array.from({ length: this.h }, (_, y) => Array.from({ length: this.w }, (_, x) => this.sheet.cell(this.r + y, this.c + x))); }
     getDisplayValues() { return this.getValues().map(row => row.map(value => value instanceof Date ? value.toISOString().slice(0, 10) : String(value))); }
     getValue() { return this.getValues()[0][0]; }
-    setValues(rows) { rows.forEach((row, y) => row.forEach((value, x) => { this.sheet.data[this.r + y - 1] ||= []; this.sheet.data[this.r + y - 1][this.c + x - 1] = clone(value); })); return this; }
+    setValues(rows) { rows.forEach((row, y) => row.forEach((value, x) => {
+      this.sheet.data[this.r + y - 1] ||= [];
+      const converts = coerceLogDates && this.sheet.name === 'Registro de Leituras KM' && /^\d{4}-\d{2}-\d{2}$/.test(String(value)) && this.sheet.formats.get(`${this.r + y}:${this.c + x}`) !== '@';
+      this.sheet.data[this.r + y - 1][this.c + x - 1] = converts ? new Date(value + 'T03:00:00Z') : clone(value);
+    }));
+      if (hook && this.sheet.name === 'Registro de Leituras KM' && this.r > 1 && this.c === 1 && this.w === 10) rows.forEach(row => hook(this.sheet, row));
+      return this;
+    }
     setValue(value) { if (failPrepare && this.r === 2 && this.c === 2) { failPrepare = false; throw Error('simulated outage'); } return this.setValues([[value]]); }
     clearContent() { clearCount++; return this.setValues(Array.from({ length: this.h }, () => Array(this.w).fill(''))); }
     getA1Notation() { return String.fromCharCode(64 + this.c) + this.r; }
-    setBackground() { return this; } setFontColor() { return this; } setFontWeight() { return this; } setNumberFormat() { return this; } setNote() { return this; }
+    setBackground() { return this; } setFontColor() { return this; } setFontWeight() { return this; } setNote() { return this; }
+    setNumberFormat(format) { for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) this.sheet.formats.set(`${this.r + y}:${this.c + x}`, format); return this; }
   }
   class Sheet {
-    constructor(name) { this.name = name; this.id = nextId++; this.data = []; sheets.push(this); }
+    constructor(name) { this.name = name; this.id = nextId++; this.data = []; this.formats = new Map(); sheets.push(this); }
     cell(r, c) {
       const value = this.data[r - 1]?.[c - 1] ?? '';
       if (String(value).startsWith('@CAL')) return context.kmMondays_(context.kmMonth_(this))[Number(value.slice(4))] ? new Date(context.kmMondays_(context.kmMonth_(this))[Number(value.slice(4))] + 'T12:00:00Z') : '';
@@ -37,7 +45,7 @@ function fixture(month = '2026-10', today = '2026-11-03') {
       return new Range(this, r, c, h, w);
     }
     copyTo() { const s = new Sheet('copy' + nextId); s.data = clone(this.data); return s; }
-    appendRow(row) { this.getRange(this.getLastRow() + 1, 1, 1, row.length).setValues([row]); if (hook) hook(this, row); }
+    appendRow(row) { this.getRange(this.getLastRow() + 1, 1, 1, row.length).setValues([row]); }
     setFrozenRows() {} setColumnWidths() {}
   }
   const book = { getSheetByName: name => sheets.find(s => s.name === name), getSheetById: id => sheets.find(s => s.id === id), insertSheet: name => new Sheet(name), deleteSheet: sheet => { sheets.splice(sheets.indexOf(sheet), 1); } };
@@ -64,7 +72,7 @@ function fixture(month = '2026-10', today = '2026-11-03') {
   active.data[5][1] = 'AGR100'; active.data[5][2] = 'RETRO'; active.data[5][11] = 'HORAS';
   const index = new Sheet('Histórico KM - Índice'); index.data = [['ÍNDICE'], ['COMPETÊNCIA', 'ABA ARQUIVADA']];
   const payload = { spreadsheetId: '1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM', sheetName: 'KM Semanal', plate: 'RKQ3C81', date: today, reading: 43539.6 };
-  return { c: context, book, active, props, sheets, payload, triggers, today: value => { date = value; }, clearCount: () => clearCount, failPrepare: () => { failPrepare = true; }, hook: value => { hook = value; } };
+  return { c: context, book, active, props, sheets, payload, triggers, today: value => { date = value; }, clearCount: () => clearCount, failPrepare: () => { failPrepare = true; }, hook: value => { hook = value; }, coerceLogDates: () => { coerceLogDates = true; } };
 }
 
 test('virada usa dia 4 de São Paulo, inclusive dezembro/janeiro e fevereiro; primeiras datas usam primeira semana do próprio mês', () => {
@@ -130,4 +138,29 @@ test('edição manual do provisório durante a transferência impede a exclusão
   const f = fixture(); f.c.updateWeeklyKmSafe_(f.payload); f.today('2026-11-04');
   f.hook((sheet, row) => { if (row[2] === 'TRANSFERÊNCIA CONFERIDA') f.book.getSheetByName('KM Provisório 11-2026').getRange('E5').setValue(45000); });
   assert.throws(() => f.c.runWeeklyKmMonthly_(), /mudou durante/); assert.ok(f.book.getSheetByName('KM Provisório 11-2026'));
+});
+test('Sheets convertendo datas ISO em Date não pode bloquear o lançamento real de novembro', () => {
+  const f = fixture(); f.coerceLogDates();
+  const result = f.c.updateWeeklyKmSafe_(f.payload);
+  assert.equal(result.ok, true); assert.equal(f.book.getSheetByName('KM Provisório 11-2026').getRange('D5').getValue(), 43539.6);
+});
+test('conferência aceita datas nativas equivalentes, mas recusa data, placa ou leitura diferentes', () => {
+  const { c } = fixture();
+  const expected = ['id', '2026-11-03T14:02:28.313Z', 'RECEBIDO', 'RKQ3C81', '2026-11-03', '2026-11-02', 43539.6, '', 'KM Provisório 11-2026', 'D11'];
+  const stored = [...expected]; stored[4] = new Date('2026-11-03T03:00:00Z'); stored[5] = new Date('2026-11-02T03:00:00Z');
+  assert.equal(c.kmLogMatches_(expected, stored), true);
+  for (const [index, value] of [[4, new Date('2026-11-04T03:00:00Z')], [3, 'OUTRA'], [6, 1], [6, '43539.6']]) {
+    const changed = [...stored]; changed[index] = value; assert.equal(c.kmLogMatches_(expected, changed), false);
+  }
+});
+test('corrupção real do registro continua impedindo gravar a leitura', () => {
+  const f = fixture();
+  f.hook(sheet => { sheet.data[sheet.getLastRow() - 1][6] = 1; });
+  assert.throws(() => f.c.updateWeeklyKmSafe_(f.payload), /conferir o registro/);
+  assert.equal(f.book.getSheetByName('KM Provisório 11-2026').getRange('D5').getValue(), '');
+});
+test('outra linha surgindo no registro não muda a célula conferida após a gravação', () => {
+  const f = fixture();
+  f.hook(sheet => { f.hook(null); sheet.appendRow(['evento concorrente']); });
+  assert.equal(f.c.updateWeeklyKmSafe_(f.payload).ok, true);
 });

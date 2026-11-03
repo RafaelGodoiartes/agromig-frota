@@ -46,10 +46,26 @@ function kmLogSheet_(book) {
   if (JSON.stringify(sheet.getRange(1, 1, 1, 10).getValues()[0]) !== JSON.stringify(KM_LOG_HEADERS)) throw new Error('Cabeçalhos do registro de KM incompatíveis.');
   return sheet;
 }
+function kmLogMatches_(expected, actual) {
+  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
+  return expected.every(function (value, index) {
+    let stored = actual[index];
+    // Sheets can return date-formatted ISO inputs as Date, not as strings.
+    // Normalize only the two date columns; all other fields remain strict.
+    if ((index === 4 || index === 5) && stored instanceof Date && !isNaN(stored.getTime())) stored = Utilities.formatDate(stored, 'America/Sao_Paulo', 'yyyy-MM-dd');
+    return stored === value;
+  });
+}
 function kmLog_(book, event, plate, day, week, reading, previous, sheet, cell) {
   const log = kmLogSheet_(book), row = [Utilities.getUuid(), new Date().toISOString(), event, plate, day, week, reading, previous, sheet, cell];
-  log.appendRow(row); SpreadsheetApp.flush();
-  if (JSON.stringify(log.getRange(log.getLastRow(), 1, 1, 10).getValues()[0]) !== JSON.stringify(row)) throw new Error('Não foi possível conferir o registro de segurança do KM.');
+  const number = log.getLastRow() + 1;
+  if (number > log.getMaxRows()) log.insertRowsAfter(log.getMaxRows(), 500);
+  const target = log.getRange(number, 1, 1, 10);
+  if (target.getValues()[0].some(function (value) { return value !== ''; })) throw new Error('O destino do registro de segurança já está preenchido. Nenhum valor foi substituído.');
+  // Set types before writing. Historical attempt rows are left untouched.
+  target.setNumberFormat('@'); log.getRange(number, 7, 1, 2).setNumberFormat('#,##0.0');
+  target.setValues([row]); SpreadsheetApp.flush();
+  if (!kmLogMatches_(row, target.getValues()[0])) throw new Error('Não foi possível conferir o registro de segurança do KM.');
 }
 function kmRows_(sheet) {
   const rows = sheet.getRange(5, 2, Math.max(1, sheet.getLastRow() - 4), 7).getValues();

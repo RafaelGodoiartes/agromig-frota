@@ -12,6 +12,10 @@ Não altera permissões nem aceita IDs de planilhas/abas arbitrários.
   primeira segunda pertencem à primeira coluna do próprio mês.
 - Cada lançamento mantém data, placa, valor anterior e destino no registro de
   leituras. Reenvio de mesmo valor não duplica. Valores menores são recusados.
+  Novas linhas têm tipos explícitos (texto e números). A conferência usa a
+  célula capturada na gravação e aceita datas nativas equivalentes em E/F,
+  mantendo comparação estrita dos demais campos. Tentativas antigas não são
+  apagadas nem reescritas para corrigir o formato.
 - Na virada, uma cópia integral de valores/formatos vira histórico imutável;
   futuras mudanças do Cadastro não mudam o histórico. Não substitui históricos
   já existentes. O índice recebe o link da nova cópia.
