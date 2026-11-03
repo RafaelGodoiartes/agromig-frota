@@ -591,7 +591,7 @@ function KmSemanalDialog({ data, onSaved }) {
             if (!response.ok) throw new Error(body.message || 'Não foi possível salvar o KM semanal.');
             const successMessage = body.message || 'KM semanal atualizado na planilha.';
             setMessage(successMessage);
-            setTimeout(() => setOpen(false), 900);
+            setTimeout(() => setOpen(false), body.provisional ? 4500 : 900);
             try {
                 await onSaved?.();
             } catch (refreshError) {
@@ -603,7 +603,7 @@ function KmSemanalDialog({ data, onSaved }) {
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button variant="outline" className="gap-2"><Gauge className="h-4 w-4" />Novo KM semanal</Button></DialogTrigger>
             <DialogContent className="sm:max-w-lg">
-                <DialogHeader><DialogTitle>Lançar KM semanal</DialogTitle><DialogDescription>A leitura será validada e gravada na semana correspondente da planilha.</DialogDescription></DialogHeader>
+                <DialogHeader><DialogTitle>Lançar KM semanal</DialogTitle><DialogDescription>Nos dias 1 a 3, leituras do novo mês ficam no provisório. Na virada do dia 4, são transferidas e conferidas na aba definitiva, preservando o histórico.</DialogDescription></DialogHeader>
                 <form onSubmit={submit} className="grid gap-4">
                     <Field label="Buscar placa, veículo ou projeto">
                         <div className="relative">
