@@ -35,6 +35,12 @@ function kmMonth_(sheet) {
 }
 function kmTempName_(month) { return 'KM Provisório ' + month.slice(5) + '-' + month.slice(0, 4); }
 function kmDigest_(values) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(values))); }
+function kmSnapshot_(sheet, rows, columns) { return sheet.getRange(1, 1, rows, columns).getValues(); }
+function kmArchiveMatches_(sheet, rows, columns, digest) {
+  // Frozen empty formulas no longer extend getDataRange(). Compare the same
+  // captured rectangle, while refusing any additional data outside it.
+  return sheet && sheet.getLastRow() <= rows && sheet.getLastColumn() <= columns && kmDigest_(kmSnapshot_(sheet, rows, columns)) === digest;
+}
 function kmLogSheet_(book) {
   let sheet = book.getSheetByName('Registro de Leituras KM');
   if (!sheet) {
@@ -109,14 +115,22 @@ function kmIndex_(book, month, archive) {
 }
 function kmArchive_(book, active, month) {
   const snapshot = active.getDataRange().getValues(), digest = kmDigest_(snapshot);
+  const rows = snapshot.length, columns = snapshot[0].length;
   const base = 'KM Semanal ' + month.slice(5) + '-' + month.slice(0, 4);
+  const existing = book.getSheetByName(base);
+  // A previous failed verification may already have preserved this exact
+  // snapshot. Reuse only an identical archive; never replace historical data.
+  if (kmArchiveMatches_(existing, rows, columns, digest)) {
+    kmIndex_(book, month, existing);
+    return { archiveId: existing.getSheetId(), digest, rows, columns };
+  }
   const name = book.getSheetByName(base) ? base + ' - preservado ' + Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyyMMdd-HHmmss') : base;
   const archive = active.copyTo(book).setName(name);
   // Freeze effective values so future Cadastro edits cannot rewrite the history.
-  archive.getDataRange().setValues(snapshot); SpreadsheetApp.flush();
-  if (kmDigest_(archive.getDataRange().getValues()) !== digest || kmDigest_(active.getDataRange().getValues()) !== digest) throw new Error('A cópia histórica não conferiu com a origem. Nenhuma leitura foi limpa.');
+  archive.getRange(1, 1, rows, columns).setValues(snapshot); SpreadsheetApp.flush();
+  if (!kmArchiveMatches_(archive, rows, columns, digest) || !kmArchiveMatches_(active, rows, columns, digest)) throw new Error('A cópia histórica não conferiu com a origem. Nenhuma leitura foi limpa.');
   kmIndex_(book, month, archive);
-  return { archiveId: archive.getSheetId(), digest, rows: snapshot.length, columns: snapshot[0].length };
+  return { archiveId: archive.getSheetId(), digest, rows, columns };
 }
 function kmMerge_(book, month) {
   const temp = book.getSheetByName(kmTempName_(month));
@@ -158,9 +172,9 @@ function kmRotateLocked_(book, today) {
   }
   if (state) {
     const archive = book.getSheetById(state.archiveId);
-    if (!archive || kmDigest_(archive.getDataRange().getValues()) !== state.digest) throw new Error('Histórico de segurança indisponível ou modificado. A virada foi interrompida.');
+    if (!kmArchiveMatches_(archive, state.rows, state.columns, state.digest)) throw new Error('Histórico de segurança indisponível ou modificado. A virada foi interrompida.');
     if (state.phase === 'archived') {
-      if (kmDigest_(active.getDataRange().getValues()) !== state.digest) throw new Error('A origem mudou após o arquivamento. Confira antes da virada; dados mantidos.');
+      if (!kmArchiveMatches_(active, state.rows, state.columns, state.digest)) throw new Error('A origem mudou após o arquivamento. Confira antes da virada; dados mantidos.');
       state.phase = 'preparing'; properties.setProperty(KM_TRANSFER_STATE, JSON.stringify(state));
     }
     if (state.phase === 'preparing') {
@@ -215,6 +229,17 @@ function runWeeklyKmMonthly_() {
   const lock = LockService.getScriptLock(); lock.waitLock(30000);
   try { console.log(JSON.stringify(kmRotateLocked_(SpreadsheetApp.openById(KM_TRANSFER_BOOK), kmToday_()))); }
   finally { lock.releaseLock(); }
+}
+function inspectWeeklyKmTransfer() {
+  fleetDocumentUser_();
+  const book = SpreadsheetApp.openById(KM_TRANSFER_BOOK), active = book.getSheetByName('KM Semanal');
+  const month = kmMonth_(active), snapshot = active.getDataRange().getValues();
+  const archive = book.getSheetByName('KM Semanal ' + month.slice(5) + '-' + month.slice(0, 4));
+  const rows = snapshot.length, columns = snapshot[0].length, digest = kmDigest_(snapshot);
+  console.log(JSON.stringify({ competence: month, rows, columns,
+    archive: archive ? { rows: archive.getLastRow(), columns: archive.getLastColumn(), sameValuesInOriginalExtent: kmArchiveMatches_(archive, rows, columns, digest) } : null,
+    provisionalPresent: !!book.getSheetByName(kmTempName_(kmToday_().slice(0, 7))),
+    transitionPending: !!PropertiesService.getScriptProperties().getProperty(KM_TRANSFER_STATE) }));
 }
 function initializeWeeklyKmTransfer() {
   fleetDocumentUser_(); // Reuse the verified corporate/operator authorization.

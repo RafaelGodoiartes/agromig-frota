@@ -19,6 +19,11 @@ Não altera permissões nem aceita IDs de planilhas/abas arbitrários.
 - Na virada, uma cópia integral de valores/formatos vira histórico imutável;
   futuras mudanças do Cadastro não mudam o histórico. Não substitui históricos
   já existentes. O índice recebe o link da nova cópia.
+  A conferência usa o retângulo original (linhas e colunas capturadas), pois
+  congelar fórmulas vazias pode encolher `getDataRange()` sem perder dados.
+  Um histórico já existente só é reutilizado quando todos os valores/tipos
+  conferem e não há dados extras fora desse retângulo. Cópias distintas não
+  são substituídas ou excluídas.
 - Só após comparar a cópia com a origem as leituras D5:H são preparadas para a
   nova competência. Demais fórmulas, placas, franquias e unidades permanecem.
 - Transferência confere placa/semana/valor, mantém conflitos dos dois lados e
@@ -42,6 +47,9 @@ sem limpar outubro. A primeira execução elegível em 04/11 faz a virada.
 ## Verificação
 
 `node --test integrations/weekly-km/WeeklyKmTransfer.test.js`
+
+`inspectWeeklyKmTransfer` permite conferir dimensões, equivalência do histórico
+e existência de provisório/transição no registro de execução, sem gravar dados.
 
 Testes simulados cobrem virada de ano, primeira semana, preservação integral,
 reenvio, conflitos, falhas intermediárias e alterações manuais concorrentes.

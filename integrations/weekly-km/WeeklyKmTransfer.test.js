@@ -38,8 +38,9 @@ function fixture(month = '2026-10', today = '2026-11-03') {
     }
     getName() { return this.name; } getSheetId() { return this.id; } setName(name) { if (sheets.some(s => s !== this && s.name === name)) throw Error('duplicate sheet'); this.name = name; return this; }
     getMaxRows() { return 20; }
+    getLastColumn() { return Math.max(1, ...this.data.map(row => row.reduce((last, v, i) => v !== '' && v !== null && v !== undefined ? i + 1 : last, 0))); }
     getLastRow() { return Math.max(1, ...this.data.map((row, i) => row?.some(v => v !== '' && v !== null && v !== undefined) ? i + 1 : 0)); }
-    getDataRange() { return new Range(this, 1, 1, this.getLastRow(), 13); }
+    getDataRange() { return new Range(this, 1, 1, this.getLastRow(), this.getLastColumn()); }
     getRange(r, c, h, w) {
       if (typeof r === 'string') { if (r === 'G:H') return new Range(this, 1, 7, 20, 2); const m = r.match(/^([A-Z]+)(\d+)$/); return new Range(this, Number(m[2]), m[1].charCodeAt(0) - 64); }
       return new Range(this, r, c, h, w);
@@ -163,4 +164,46 @@ test('outra linha surgindo no registro não muda a célula conferida após a gra
   const f = fixture();
   f.hook(sheet => { f.hook(null); sheet.appendRow(['evento concorrente']); });
   assert.equal(f.c.updateWeeklyKmSafe_(f.payload).ok, true);
+});
+test('histórico com fórmulas vazias nas últimas linhas deve conferir pela extensão original, não pela área que encolheu', () => {
+  const f = fixture();
+  // A formula returning empty still extends the original data range. Freezing
+  // values removes it, so Sheets subsequently reports a shorter data range.
+  const nativeCell = f.active.cell.bind(f.active);
+  while (f.active.data.length < 20) f.active.data.push(Array(13).fill(''));
+  f.active.data[19][12] = '@EMPTY';
+  f.active.cell = (r, c) => nativeCell(r, c) === '@EMPTY' ? '' : nativeCell(r, c);
+  f.c.updateWeeklyKmSafe_(f.payload); f.today('2026-11-04');
+  f.c.runWeeklyKmMonthly_();
+  assert.equal(f.c.kmMonth_(f.active), '2026-11');
+  assert.equal(f.active.getRange('D5').getValue(), 43539.6);
+  assert.equal(f.book.getSheetByName('KM Provisório 11-2026'), undefined);
+});
+test('retomada reutiliza somente histórico idêntico, sem duplicar cópias ou alterar arquivos existentes', () => {
+  const f = fixture();
+  const original = f.active.getDataRange().getValues();
+  const archive = f.active.copyTo(f.book).setName('KM Semanal 10-2026');
+  archive.getRange(1, 1, original.length, original[0].length).setValues(original);
+  const id = archive.getSheetId(), preserved = JSON.stringify(archive.getDataRange().getValues());
+  f.c.updateWeeklyKmSafe_(f.payload); f.today('2026-11-04'); f.c.runWeeklyKmMonthly_();
+  assert.equal(f.book.getSheetByName('KM Semanal 10-2026').getSheetId(), id);
+  assert.equal(JSON.stringify(archive.getDataRange().getValues()), preserved);
+  assert.equal(f.sheets.filter(s => s.getName().startsWith('KM Semanal 10-2026')).length, 1);
+  f.c.runWeeklyKmMonthly_();
+  assert.equal(f.book.getSheetByName('Histórico KM - Índice').getLastRow(), 3);
+});
+test('conferência mantém números e tipos estritos e rejeita dados extras fora do retângulo', () => {
+  const f = fixture(), original = f.active.getDataRange().getValues();
+  const archive = f.active.copyTo(f.book).setName('KM Semanal 10-2026');
+  archive.getRange(1, 1, original.length, original[0].length).setValues(original);
+  const digest = f.c.kmDigest_(original), matches = () => f.c.kmArchiveMatches_(archive, original.length, original[0].length, digest);
+  assert.equal(matches(), true);
+  archive.getRange('D5').setValue('43000'); assert.equal(matches(), false);
+  archive.getRange('D5').setValue(43000); archive.getRange('M10').setValue('não ignorar'); assert.equal(matches(), false);
+});
+test('inspeção de segurança é somente leitura', () => {
+  const f = fixture(), before = JSON.stringify(f.active.getDataRange().getValues()), count = f.sheets.length;
+  f.c.inspectWeeklyKmTransfer();
+  assert.equal(JSON.stringify(f.active.getDataRange().getValues()), before);
+  assert.equal(f.sheets.length, count); assert.equal(f.clearCount(), 0); assert.equal(f.props.size, 0);
 });
