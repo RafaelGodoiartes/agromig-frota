@@ -19,17 +19,21 @@ export function useFleetOverviewData() {
         if (running.current) return;
         running.current = true;
         const id = ++request.current; setLoading(true); setError('');
+        const controller = new AbortController();
+        let timeout;
         try {
             // Authenticate before loading/composing the financial view. Private
             // measurement records never cross the iframe or enter public JSON.
             const billing = await overviewRpc('getFleetOverviewState');
-            const response = await apiServerClient.fetch('/fleet/refresh', { method: 'GET' });
-            if (!response.ok) throw new Error('Não foi possível atualizar os dados da frota.');
-            const base = await response.json();
-            const [registry, revenues, documents, supplies] = await Promise.all([loadOwnedVehicleRegistry(), loadFaturamentoSources(), loadDocumentPayments(), loadAbastecimentoSources()]);
+            timeout = setTimeout(() => controller.abort(), 45000);
+            const fleet = apiServerClient.fetch('/fleet/refresh', { method: 'GET', signal: controller.signal }).then(async response => {
+                if (!response.ok) throw new Error('Não foi possível atualizar os dados da frota.');
+                return response.json();
+            });
+            const [base, registry, revenues, documents, supplies] = await Promise.all([fleet, loadOwnedVehicleRegistry(), loadFaturamentoSources(), loadDocumentPayments(), loadAbastecimentoSources()]);
             if (mounted.current && id === request.current) setSnapshot({ billing, data: { ...base, ...revenues, ...supplies, cadastroFinanceiro: registry, pagamentosDocumentacao: documents }, at: new Date() });
-        } catch (failure) { if (mounted.current && id === request.current) setError(failure.message); }
-        finally { running.current = false; if (mounted.current && id === request.current) setLoading(false); }
+        } catch (failure) { if (mounted.current && id === request.current) setError(failure.name === 'AbortError' ? 'A leitura das planilhas demorou mais que o esperado. Tente atualizar novamente.' : failure.message); }
+        finally { clearTimeout(timeout); controller.abort(); running.current = false; if (mounted.current && id === request.current) setLoading(false); }
     }, []);
     useEffect(() => {
         mounted.current = true; load();

@@ -138,7 +138,7 @@ const apiServerClient = {
             // Sempre usa um carimbo novo para impedir que o navegador ou um
             // proxy entregue uma resposta antiga da aba Documentação.
             const endpoint = `${API_SERVER_URL}?action=readFleetData&t=${Date.now()}`;
-            const response = await window.fetch(endpoint, { method: 'GET' });
+            const response = await window.fetch(endpoint, { method: 'GET', signal: options.signal });
             return readResponse(response);
         }
         const input = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : (options.body || {});
