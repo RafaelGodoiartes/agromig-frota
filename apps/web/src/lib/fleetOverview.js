@@ -100,9 +100,10 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
     const invalidPeriod = !!from && !!to && from > to;
     const allRevenue = overviewRevenue(data, billing, registry), allVariable = overviewVariableCosts(data, registry);
     const project = text(filters.project), vehicleId = filters.vehicle || '';
-    const selectedVehicles = registry.filter(row => (!vehicleId || row.id === vehicleId) && (!project || row.projeto === project || [...allRevenue, ...allVariable].some(item => item.vehicleId === row.id && item.project === project)));
+    const unknownProject = project === 'Sem projeto informado';
+    const selectedVehicles = registry.filter(row => (!vehicleId || row.id === vehicleId) && (!project || (unknownProject ? !row.projeto : row.projeto === project) || [...allRevenue, ...allVariable].some(item => item.vehicleId === row.id && (unknownProject ? !item.project : item.project === project))));
     const ids = new Set(selectedVehicles.map(row => row.id));
-    const allowed = row => (!vehicleId || row.vehicleId === vehicleId) && (!project || row.project === project || (!row.project && registry.find(v => v.id === row.vehicleId)?.projeto === project));
+    const allowed = row => (!vehicleId || row.vehicleId === vehicleId) && (!project || (unknownProject ? !row.project : row.project === project || (!row.project && registry.find(v => v.id === row.vehicleId)?.projeto === project)));
     const inPeriod = row => !invalidPeriod && dateInRange(row.date, from, to);
     const revenue = allRevenue.filter(row => inPeriod(row) && allowed(row));
     const variable = allVariable.filter(row => inPeriod(row) && allowed(row));
@@ -110,7 +111,7 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
     const monthly = monthlyInstallmentExpense(registry, month);
     const fixed = [];
     const addFixed = (vehicle, amountCents, source, date, note = '') => {
-        if (!ids.has(vehicle.id) || (project && vehicle.projeto !== project) || (singleMonth && !dateInRange(date, from, to))) return;
+        if (!ids.has(vehicle.id) || (project && (unknownProject ? !!vehicle.projeto : vehicle.projeto !== project)) || (singleMonth && !dateInRange(date, from, to))) return;
         fixed.push({ id: `${source}:${vehicle.id}`, vehicleId: vehicle.id, project: vehicle.projeto, source, date, amountCents, description: note, note: 'Previsto; não comprova pagamento' });
     };
     for (const vehicle of registry) {
@@ -156,6 +157,6 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
         byProject: [...groups].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
         costGroups: [...costGroups].map(([name, value]) => ({ name, value })).filter(row => row.value > 0),
         unassigned: [...comparableRevenue, ...variable].filter(row => !row.vehicleId),
-        projects: [...new Set([...registry.map(row => row.projeto), ...allRevenue.map(row => row.project), ...allVariable.map(row => row.project)].filter(Boolean))].sort(),
+        projects: [...new Set([...registry.map(row => row.projeto), ...allRevenue.map(row => row.project), ...allVariable.map(row => row.project), 'Sem projeto informado'].filter(Boolean))].sort(),
     };
 }

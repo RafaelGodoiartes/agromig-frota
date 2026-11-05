@@ -14,8 +14,10 @@ export function overviewRpc(method) {
 }
 export function useFleetOverviewData() {
     const [snapshot, setSnapshot] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
-    const request = useRef(0), mounted = useRef(true);
+    const request = useRef(0), mounted = useRef(true), running = useRef(false);
     const load = useCallback(async () => {
+        if (running.current) return;
+        running.current = true;
         const id = ++request.current; setLoading(true); setError('');
         try {
             // Authenticate before loading/composing the financial view. Private
@@ -27,7 +29,7 @@ export function useFleetOverviewData() {
             const [registry, revenues, documents, supplies] = await Promise.all([loadOwnedVehicleRegistry(), loadFaturamentoSources(), loadDocumentPayments(), loadAbastecimentoSources()]);
             if (mounted.current && id === request.current) setSnapshot({ billing, data: { ...base, ...revenues, ...supplies, cadastroFinanceiro: registry, pagamentosDocumentacao: documents }, at: new Date() });
         } catch (failure) { if (mounted.current && id === request.current) setError(failure.message); }
-        finally { if (mounted.current && id === request.current) setLoading(false); }
+        finally { running.current = false; if (mounted.current && id === request.current) setLoading(false); }
     }, []);
     useEffect(() => {
         mounted.current = true; load();

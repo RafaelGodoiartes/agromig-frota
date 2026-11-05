@@ -79,3 +79,9 @@ test('filtro de projeto não usa mensalidade de outro projeto e somas gerais con
     assert.equal(s.table.length, 1); assert.equal(s.totalRevenueCents, 100000); assert.equal(s.byProject[0].name, 'Projeto B');
     assert.equal(s.table.reduce((sum, row) => sum + row.revenueCents, 0), s.totalRevenueCents);
 });
+test('projeto não informado também pode ser filtrado sem produzir uma seleção vazia artificial', () => {
+    const d = data({ cadastroFinanceiro: [vehicle('AAA1B23', { projeto: '', tipoPosse: 'LOCADO' })], abastecimento: [{ id: 1, placa: 'AAA1B23', data: '2026-10-02', valor: 100, projeto: '' }] });
+    const s = summary(d, billing(), { ...month, project: 'Sem projeto informado' });
+    assert.equal(s.table.length, 1); assert.equal(s.variableCents, 10000); assert.equal(s.fixedCents, 100000);
+    assert.ok(s.projects.includes('Sem projeto informado'));
+});
