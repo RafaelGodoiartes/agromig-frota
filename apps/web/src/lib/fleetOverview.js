@@ -1,7 +1,6 @@
 import { isoDate, dateInRange } from './faturamento.js';
 import { moneyCents, insuranceSchedule, OWNED_FLEET_INSURANCE_PAID } from './ownedVehicleFinance.js';
 import { monthlyInstallmentExpense } from './vehicleInstallments.js';
-import { mergeAbastecimentoRows } from './abastecimentoTypes.js';
 
 export const overviewKey = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const text = value => String(value ?? '').trim();
@@ -23,7 +22,7 @@ export function overviewRegistry(data) {
     return [...groups].map(([id, group]) => {
         const first = group[0], extra = (data.veiculos || []).find(row => overviewKey(row.placa) === id);
         const conflict = ['tipoPosse', 'aluguelMensal', 'parcelaMensal', 'projeto'].some(field => new Set(group.map(row => row[field] ?? '')).size > 1);
-        return { ...extra, ...first, id, conflict, own: overviewKey(first.tipoPosse) === 'PROPRIO' };
+        return { ...extra, ...first, id, conflict, own: group.every(row => overviewKey(row.tipoPosse) === 'PROPRIO') };
     });
 }
 function identify(value, registry) {
@@ -83,15 +82,14 @@ export function overviewVariableCosts(data, registry) {
         description: [row.tipo, row.descricao || row.peca, row.fornecedor].filter(Boolean).join(' · '), amountCents: moneyCents(row.custoTotal ?? row.valor),
         source: 'Manutenção', note: text(row.status),
     }));
-    const fuel = mergeAbastecimentoRows(data.abastecimento || [], data.outrosAbastecimentos || []).map((row, i) => ({
-        id: `fuel:${row.id ?? i}`, vehicleId: identify(row.placa, registry)?.id || '', date: isoDate(row.data), project: text(row.projeto),
-        description: [row.item || row.combustivel, row.posto].filter(Boolean).join(' · '), amountCents: moneyCents(row.valor), source: 'Abastecimento',
-    }));
     const documents = (data.pagamentosDocumentacao || []).map((row, i) => ({
         id: `document:${row.id ?? i}`, vehicleId: identify(row.vehicle, registry)?.id || '', date: isoDate(row.date), project: '',
         description: [row.document, row.provider, row.vehicle].filter(Boolean).join(' · '), amountCents: row.amountCents, source: 'Documentação',
     }));
-    return unique([...maintenance, ...fuel, ...documents]);
+    // Expenses belong exclusively to assets confirmed as owned in Cadastro.
+    // Unmatched records cannot establish ownership; fuel remains in its own module.
+    const ownedIds = new Set(registry.filter(row => row.own).map(row => row.id));
+    return unique([...maintenance, ...documents]).filter(row => ownedIds.has(row.vehicleId));
 }
 export function summarizeFleetOverview(data, billing, filters = {}, today = overviewToday()) {
     const registry = overviewRegistry(data), from = isoDate(filters.from), to = isoDate(filters.to);
@@ -101,21 +99,21 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
     const allRevenue = overviewRevenue(data, billing, registry), allVariable = overviewVariableCosts(data, registry);
     const project = text(filters.project), vehicleId = filters.vehicle || '';
     const unknownProject = project === 'Sem projeto informado';
-    const selectedVehicles = registry.filter(row => (!vehicleId || row.id === vehicleId) && (!project || (unknownProject ? !row.projeto : row.projeto === project) || [...allRevenue, ...allVariable].some(item => item.vehicleId === row.id && (unknownProject ? !item.project : item.project === project))));
+    const ownedRegistry = registry.filter(row => row.own);
+    const selectedVehicles = ownedRegistry.filter(row => (!vehicleId || row.id === vehicleId) && (!project || (unknownProject ? !row.projeto : row.projeto === project) || [...allRevenue, ...allVariable].some(item => item.vehicleId === row.id && (unknownProject ? !item.project : item.project === project))));
     const ids = new Set(selectedVehicles.map(row => row.id));
     const allowed = row => (!vehicleId || row.vehicleId === vehicleId) && (!project || (unknownProject ? !row.project : row.project === project || (!row.project && registry.find(v => v.id === row.vehicleId)?.projeto === project)));
     const inPeriod = row => !invalidPeriod && dateInRange(row.date, from, to);
     const revenue = allRevenue.filter(row => inPeriod(row) && allowed(row));
     const variable = allVariable.filter(row => inPeriod(row) && allowed(row));
     const insurance = overviewInsurance(billing.insuranceItems || [], month);
-    const monthly = monthlyInstallmentExpense(registry, month);
+    const monthly = monthlyInstallmentExpense(ownedRegistry, month);
     const fixed = [];
     const addFixed = (vehicle, amountCents, source, date, note = '') => {
         if (!ids.has(vehicle.id) || (project && (unknownProject ? !!vehicle.projeto : vehicle.projeto !== project)) || (singleMonth && !dateInRange(date, from, to))) return;
         fixed.push({ id: `${source}:${vehicle.id}`, vehicleId: vehicle.id, project: vehicle.projeto, source, date, amountCents, description: note, note: 'Previsto; não comprova pagamento' });
     };
-    for (const vehicle of registry) {
-        if (overviewKey(vehicle.tipoPosse) === 'LOCADO') addFixed(vehicle, moneyCents(vehicle.aluguelMensal), 'Aluguel de locado', `${month}-25`);
+    for (const vehicle of ownedRegistry) {
         if (yes(vehicle.temSeguro)) {
             const share = insurance.allocations.find(row => row.plate === vehicle.id);
             addFixed(vehicle, share?.amountCents ?? null, 'Seguro', insurance.installment?.dueDate || `${month}-13`, share ? `Rateio proporcional à apólice · ${insurance.installment ? `${insurance.installment.number}/10` : 'fora das 10 parcelas'}` : 'Sem apólice individual vinculada');
@@ -151,12 +149,12 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
     comparableRevenue.forEach(row => { const name = row.project || 'Sem projeto informado'; groups.set(name, (groups.get(name) || 0) + (row.amountCents ?? 0)); });
     const costGroups = new Map();
     [...variable, ...(singleMonth ? fixed : [])].forEach(row => costGroups.set(row.source, (costGroups.get(row.source) || 0) + (row.amountCents ?? 0)));
-    return { registry, table, revenue, comparableRevenue, variable, fixed, insurance, month, singleMonth, invalidPeriod, issues: [...new Set(issues)],
+    return { registry: ownedRegistry, table, revenue, comparableRevenue, variable, fixed, insurance, month, singleMonth, invalidPeriod, issues: [...new Set(issues)],
         totalRevenueCents, fixedCents, variableCents, monthlyContractCents: sum(rentals),
         resultCents: singleMonth && !issues.length ? totalRevenueCents - fixedCents - variableCents : null,
         byProject: [...groups].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
         costGroups: [...costGroups].map(([name, value]) => ({ name, value })).filter(row => row.value > 0),
         unassigned: [...comparableRevenue, ...variable].filter(row => !row.vehicleId),
-        projects: [...new Set([...registry.map(row => row.projeto), ...allRevenue.map(row => row.project), ...allVariable.map(row => row.project), 'Sem projeto informado'].filter(Boolean))].sort(),
+        projects: [...new Set([...ownedRegistry.map(row => row.projeto), ...allRevenue.map(row => row.project), ...allVariable.map(row => row.project), 'Sem projeto informado'].filter(Boolean))].sort(),
     };
 }

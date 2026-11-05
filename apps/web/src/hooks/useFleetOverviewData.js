@@ -3,7 +3,6 @@ import apiServerClient from '@/lib/apiServerClient';
 import { loadOwnedVehicleRegistry } from '@/lib/ownedVehicleFinanceSources';
 import { loadFaturamentoSources } from '@/lib/faturamentoSources';
 import { loadDocumentPayments } from '@/lib/documentPayments';
-import { loadAbastecimentoSources } from '@/lib/abastecimentoSources';
 
 export function overviewRpc(method) {
     return new Promise((resolve, reject) => {
@@ -30,8 +29,8 @@ export function useFleetOverviewData() {
                 if (!response.ok) throw new Error('Não foi possível atualizar os dados da frota.');
                 return response.json();
             });
-            const [base, registry, revenues, documents, supplies] = await Promise.all([fleet, loadOwnedVehicleRegistry(), loadFaturamentoSources(), loadDocumentPayments(), loadAbastecimentoSources()]);
-            if (mounted.current && id === request.current) setSnapshot({ billing, data: { ...base, ...revenues, ...supplies, cadastroFinanceiro: registry, pagamentosDocumentacao: documents }, at: new Date() });
+            const [base, registry, revenues, documents] = await Promise.all([fleet, loadOwnedVehicleRegistry(), loadFaturamentoSources(), loadDocumentPayments()]);
+            if (mounted.current && id === request.current) setSnapshot({ billing, data: { ...base, ...revenues, cadastroFinanceiro: registry, pagamentosDocumentacao: documents }, at: new Date() });
         } catch (failure) { if (mounted.current && id === request.current) setError(failure.name === 'AbortError' ? 'A leitura das planilhas demorou mais que o esperado. Tente atualizar novamente.' : failure.message); }
         finally { clearTimeout(timeout); controller.abort(); running.current = false; if (mounted.current && id === request.current) setLoading(false); }
     }, []);

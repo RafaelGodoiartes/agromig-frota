@@ -74,4 +74,11 @@ conferência. Custos fixos são previsões, não comprovantes de pagamento; dado
 ausentes bloqueiam o resultado e ficam em notas de conferência, sem alertas
 operacionais. O histórico de pagamentos e as demais abas não são alterados.
 
+Frota, projetos atendidos, tabela e despesas fixas/variáveis consideram somente
+ativos com Posse = Próprio no Cadastro, sem posse divergente entre duplicatas.
+Fixas incluem seguro e parcelas; variáveis incluem manutenção e documentação.
+Abastecimentos, locados, terceiros e custos sem vínculo com um próprio não
+entram nas despesas desta visão. Os módulos de origem e suas leituras permanecem
+intactos. Não redistribua a apólice inteira ao filtrar somente alguns veículos.
+
 Teste adicional: `node --test apps/web/src/lib/fleetOverview.test.js`.

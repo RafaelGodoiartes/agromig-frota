@@ -31,8 +31,8 @@ test('todo período separa mensalidade atual do histórico e não inventa recebi
 });
 test('mês inclui somente próprios, sem duplicar cadastro nem aluguel da Prancha', () => {
     const s = summary(data({ cadastroFinanceiro: [vehicle('AAA1B23'), vehicle('AAA1B23'), vehicle('BBB2C34', { tipoPosse: 'LOCADO' }), vehicle('LTU5A25', { aluguelMensal: 18000 })], viagensLTU5A25: [{ id: 1, data: '2026-10-05', placa: 'LTU5A25', projeto: 'Projeto B', kmTotal: 100, valorKm: 7 }] }), billing(), month);
-    assert.equal(s.table.length, 3); assert.equal(s.monthlyContractCents, 100000);
-    assert.equal(s.totalRevenueCents, 170000); assert.equal(s.fixedCents, 625928);
+    assert.equal(s.table.length, 2); assert.equal(s.monthlyContractCents, 100000);
+    assert.equal(s.totalRevenueCents, 170000); assert.equal(s.fixedCents, 525928);
     assert.equal(s.comparableRevenue.filter(row => row.vehicleId === 'LTU5A25').length, 1);
 });
 test('mensalidade entra pelo dia 25, sem marcar recebimento como confirmado', () => {
@@ -48,11 +48,11 @@ test('exclusão lógica e IDs repetidos não duplicam receitas, mas registros re
     const rows = overviewRevenue(data(), billing({ measurements: [measurement, measurement, { ...measurement, id: 'm2' }, { ...measurement, id: 'm3', deleted: true }] }), []);
     assert.equal(rows.length, 2);
 });
-test('custos incluem manutenção, combustível e documentação sem despesas de outros filtros', () => {
+test('custos incluem manutenção e documentação, sem combustível nem despesas de outros filtros', () => {
     const d = data({ manutencao: [{ id: 1, placa: 'AAA1B23', projeto: 'Projeto A', dataChamado: '2026-10-02', custoTotal: 100, descricao: 'Troca de óleo' }, { id: 2, placa: 'AAA1B23', dataChamado: '2026-09-30', custoTotal: 999 }], abastecimento: [{ id: 1, placa: 'AAA1B23', data: '2026-10-03', valor: 200, projeto: 'Projeto A' }], pagamentosDocumentacao: [{ id: 1, vehicle: 'AAA1B23', date: '2026-10-04', amountCents: 5000 }] });
     const s = summary(d, billing(), month);
-    assert.equal(s.variableCents, 35000); assert.equal(s.resultCents, 65000);
-    assert.equal(s.variable.length, 3);
+    assert.equal(s.variableCents, 15000); assert.equal(s.resultCents, 85000);
+    assert.equal(s.variable.length, 2);
     assert.equal(summary(d, billing(), { ...month, vehicle: 'OUTRO' }).variableCents, 0);
 });
 test('a parcela inteira da apólice nunca é repetida por veículo e máquina sem cobertura fica não informada', () => {
@@ -80,8 +80,47 @@ test('filtro de projeto não usa mensalidade de outro projeto e somas gerais con
     assert.equal(s.table.reduce((sum, row) => sum + row.revenueCents, 0), s.totalRevenueCents);
 });
 test('projeto não informado também pode ser filtrado sem produzir uma seleção vazia artificial', () => {
-    const d = data({ cadastroFinanceiro: [vehicle('AAA1B23', { projeto: '', tipoPosse: 'LOCADO' })], abastecimento: [{ id: 1, placa: 'AAA1B23', data: '2026-10-02', valor: 100, projeto: '' }] });
+    const d = data({ cadastroFinanceiro: [vehicle('AAA1B23', { projeto: '' })], manutencao: [{ id: 1, placa: 'AAA1B23', dataChamado: '2026-10-02', custoTotal: 100, projeto: '' }] });
     const s = summary(d, billing(), { ...month, project: 'Sem projeto informado' });
-    assert.equal(s.table.length, 1); assert.equal(s.variableCents, 10000); assert.equal(s.fixedCents, 100000);
+    assert.equal(s.table.length, 1); assert.equal(s.variableCents, 10000); assert.equal(s.fixedCents, 0);
     assert.ok(s.projects.includes('Sem projeto informado'));
+});
+
+test('frota, projetos e despesas excluem locados, terceiros, posse ausente e custos sem vínculo', () => {
+    const d = data({ cadastroFinanceiro: [
+        vehicle('AAA1B23', { temSeguro: 'Sim', temParcela: 'Sim', parcelaMensal: 10 }),
+        vehicle('BBB2C34', { tipoPosse: 'LOCADO', projeto: 'Só locado', temSeguro: 'Sim', temParcela: 'Sim', parcelaMensal: 999 }),
+        vehicle('CCC3D45', { tipoPosse: 'TERCEIRO', projeto: 'Só terceiro' }),
+        vehicle('DDD4E56', { tipoPosse: '', projeto: 'Sem posse' }),
+    ], manutencao: ['AAA1B23', 'BBB2C34', 'CCC3D45', 'DDD4E56', 'SEMPLACA'].map((placa, id) => ({ id, placa, dataChamado: '2026-10-02', custoTotal: 100 })),
+    pagamentosDocumentacao: ['AAA1B23', 'BBB2C34', 'SEMPLACA'].map((vehicle, id) => ({ id, vehicle, date: '2026-10-03', amountCents: 5000 })) });
+    const s = summary(d, billing(), month);
+    assert.deepEqual(s.registry.map(row => row.id), ['AAA1B23']);
+    assert.deepEqual(s.table.map(row => row.id), ['AAA1B23']);
+    assert.equal(new Set(s.table.map(row => row.projeto)).size, 1);
+    assert.equal(s.projects.includes('Só locado'), false);
+    assert.equal(s.variableCents, 15000);
+    assert.deepEqual(s.variable.map(row => row.source), ['Manutenção', 'Documentação']);
+    assert.ok(s.fixed.every(row => row.vehicleId === 'AAA1B23'));
+    assert.equal(s.fixedCents, distributeInsurance(417719, billing().insuranceItems)[0].amountCents + 1000);
+    assert.equal(s.fixed.some(row => row.source === 'Aluguel de locado'), false);
+    assert.equal(summary(d, billing(), { ...month, vehicle: 'BBB2C34' }).table.length, 0);
+});
+
+test('abastecimento e suprimentos não alteram despesas ou resultado, sem modificar a origem', () => {
+    const d = data({ abastecimento: [{ id: 1, placa: 'AAA1B23', data: '2026-10-01', valor: 99999 }], outrosAbastecimentos: [{ id: 2, placa: 'AAA1B23', data: '', valor: '' }] });
+    const before = structuredClone(d);
+    const s = summary(d, billing(), month), baseline = summary(data(), billing(), month);
+    assert.equal(s.variableCents, 0);
+    assert.equal(s.resultCents, baseline.resultCents);
+    assert.deepEqual(s.costGroups, baseline.costGroups);
+    assert.deepEqual(s.issues, baseline.issues);
+    assert.deepEqual(d, before);
+});
+
+test('posse divergente entre cadastros não classifica o ativo como próprio por ordem de linhas', () => {
+    for (const cadastroFinanceiro of [[vehicle('AAA1B23'), vehicle('AAA1B23', { tipoPosse: 'LOCADO' })], [vehicle('AAA1B23', { tipoPosse: 'LOCADO' }), vehicle('AAA1B23')]]) {
+        const s = summary(data({ cadastroFinanceiro, manutencao: [{ placa: 'AAA1B23', dataChamado: '2026-10-01', custoTotal: 100 }] }), billing(), month);
+        assert.equal(s.table.length, 0); assert.equal(s.fixedCents, 0); assert.equal(s.variableCents, 0);
+    }
 });
