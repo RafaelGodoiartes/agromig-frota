@@ -1,6 +1,6 @@
 import { isoDate, dateInRange } from './faturamento.js';
 import { moneyCents, insuranceSchedule, OWNED_FLEET_INSURANCE_PAID } from './ownedVehicleFinance.js';
-import { monthlyInstallmentExpense } from './vehicleInstallments.js';
+import { monthlyInstallmentExpense, resolveInstallmentAmounts } from './vehicleInstallments.js';
 
 export const overviewKey = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const text = value => String(value ?? '').trim();
@@ -108,6 +108,7 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
     const variable = allVariable.filter(row => inPeriod(row) && allowed(row));
     const insurance = overviewInsurance(billing.insuranceItems || [], month);
     const monthly = monthlyInstallmentExpense(ownedRegistry, month);
+    const acquisitionContracts = resolveInstallmentAmounts(ownedRegistry);
     const fixed = [];
     const addFixed = (vehicle, amountCents, source, date, note = '') => {
         if (!ids.has(vehicle.id) || (project && (unknownProject ? !!vehicle.projeto : vehicle.projeto !== project)) || (singleMonth && !dateInRange(date, from, to))) return;
@@ -120,7 +121,7 @@ export function summarizeFleetOverview(data, billing, filters = {}, today = over
         }
         const contract = monthly.rows.find(row => row.id === 'prancha' ? vehicle.id === 'LTU5A25' : row.members.some(member => member.plate === vehicle.id));
         if (contract) addFixed(vehicle, contract.id === 'prancha' ? contract.amountCents : contract.members.find(member => member.plate === vehicle.id)?.cents ?? null, 'Parcela', contract.installment.dueDate, `${contract.installment.number}/${contract.total} · calendário estimado, valor atual`);
-        else if (yes(vehicle.temParcela)) addFixed(vehicle, moneyCents(vehicle.parcelaMensal), 'Parcela', `${month}-01`, 'Cadastro; sem calendário individual confirmado');
+        else if (yes(vehicle.temParcela) && !acquisitionContracts.some(row => row.id === 'prancha' ? vehicle.id === 'LTU5A25' : row.members.some(member => member.plate === vehicle.id))) addFixed(vehicle, moneyCents(vehicle.parcelaMensal), 'Parcela', `${month}-01`, 'Cadastro; sem calendário individual confirmado');
     }
     const rentals = selectedVehicles.filter(row => row.own && row.id !== 'LTU5A25').map(vehicle => ({
         id: `monthly:${vehicle.id}`, vehicleId: vehicle.id, project: vehicle.projeto, date: `${month}-25`, source: 'Aluguel mensal', description: 'Cadastro atual · recebimento previsto dia 25',

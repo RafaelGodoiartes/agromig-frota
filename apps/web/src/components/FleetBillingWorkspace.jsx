@@ -24,8 +24,8 @@ export default function FleetBillingWorkspace({ overview = false }) {
         return () => window.removeEventListener('message', receive);
     }, [frameId]);
     return <section className="space-y-3">
-        <Card className="p-4 flex flex-wrap items-center justify-between gap-3 border-green-200 bg-green-50/40">
-            <div className="text-sm max-w-3xl"><p className="flex items-center gap-2 font-semibold text-[#1f6b3d]"><ShieldCheck className="h-4 w-4" />{overview ? 'Visão geral financeira' : 'Projetos e medições'} — área autenticada</p><p className="mt-1 text-muted-foreground">Acesso com conta corporativa. Se o Google solicitar login, abra a área e depois recarregue o quadro. Os dados financeiros privados permanecem protegidos.</p></div>
+        <Card className="p-3 flex flex-wrap items-center justify-between gap-3 border-green-200 bg-green-50/40">
+            <div className="text-sm max-w-3xl"><p className="flex items-center gap-2 font-semibold text-[#1f6b3d]"><ShieldCheck className="h-4 w-4" />{overview ? 'Visão geral financeira' : 'Projetos e medições — área autenticada'}</p><p className="mt-1 text-xs text-muted-foreground">{overview ? 'Conta corporativa · consulta protegida' : 'Acesso com conta corporativa. Se o Google solicitar login, abra a área e depois recarregue o quadro. Os dados financeiros privados permanecem protegidos.'}</p></div>
             <div className="flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><a href={portalUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4 mr-2" />{overview ? 'Abrir visão geral' : 'Entrar na área de medições'}</a></Button><Button variant="outline" size="sm" onClick={() => setReload((value) => value + 1)}><RefreshCw className="h-4 w-4 mr-2" />Recarregar quadro</Button></div>
         </Card>
         <iframe ref={frame} key={reload} title={overview ? 'Visão geral financeira da frota' : 'Projetos e medições da frota'} src={`${portalUrl}&frameId=${frameId}`} className="w-full rounded-xl border bg-white scroll-mt-24" style={{ height }} />

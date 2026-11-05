@@ -82,3 +82,17 @@ entram nas despesas desta visão. Os módulos de origem e suas leituras permanec
 intactos. Não redistribua a apólice inteira ao filtrar somente alguns veículos.
 
 Teste adicional: `node --test apps/web/src/lib/fleetOverview.test.js`.
+
+### Cards de aquisição e histórico mensal
+
+`fleetAcquisitions.js` reutiliza os contratos/quantidades confirmados em
+`vehicleInstallments.js`, sem marcar pagamentos por vencimento. São exibidos os
+meses pagos desde os inícios estimados já aprovados, mantendo a posição até
+outubro/2026. Aquisição histórica usa preço atual por ativo e é explicitamente
+estimada; seguro usa somente as três parcelas confirmadas e o mesmo rateio privado.
+O gráfico respeita o período e o detalhe permite consultar todo o histórico.
+Ativos sem calendário não ganham pagamentos presumidos. Valores individuais de
+aquisição e seguro conciliam com as fixas da seleção, sem adicionar a aquisição
+duas vezes nem repetir o preço integral de um grupo em cada veículo.
+
+Teste: `node --test apps/web/src/lib/fleetAcquisitions.test.js`.
