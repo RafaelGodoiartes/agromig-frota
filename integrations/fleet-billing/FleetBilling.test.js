@@ -45,9 +45,21 @@ test('base privada inicializa uma vez, sem exemplos e sem substituir os dados ex
     const state = f.context.getFleetBillingState();
     assert.equal(state.revision, 0); assert.equal(state.projects.length, 0); assert.equal(state.measurements.length, 0); assert.equal(state.equipment[0].id, 'AAA1B23');
 });
+test('visão geral exige rateio configurado, valida dados e devolve somente campos necessários ao leitor autorizado', () => {
+    const f = fixture(); f.initialize();
+    assert.throws(() => f.context.getFleetOverviewState(), /não foi configurado/);
+    f.properties.set('FROTA_OVERVIEW_INSURANCE', JSON.stringify({ items: [{ plate: 'AAA1B23', premiumCents: 12300, extra: 'não publicar' }] }));
+    const writes = f.writes(); f.setAllowed(false);
+    const result = f.context.getFleetOverviewState();
+    assert.equal(result.insuranceItems.length, 1); assert.equal(result.insuranceItems[0].premiumCents, 12300);
+    assert.equal(result.insuranceItems[0].extra, undefined); assert.equal(f.writes(), writes);
+    f.properties.set('FROTA_OVERVIEW_INSURANCE', JSON.stringify({ items: [{ plate: 'AAA', premiumCents: -1 }] }));
+    assert.throws(() => f.context.getFleetOverviewState(), /inválida/);
+});
 test('todas as operações validam identidade Google e permissão de gestão no servidor', () => {
     const f = fixture(); f.initialize(); f.setActor('externo@example.com');
     assert.throws(() => f.context.getFleetBillingState(), /Acesso/);
+    assert.throws(() => f.context.getFleetOverviewState(), /Acesso/);
     assert.throws(() => f.context.getFleetBillingHistory('project', 'x'), /Acesso/);
     assert.throws(() => f.project({ email: 'frota@agromig.com.br' }), /Acesso/);
     f.setActor('leitor@agromig.com.br'); f.setAllowed(false);

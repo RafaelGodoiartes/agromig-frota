@@ -56,3 +56,22 @@ Não use lançamentos reais para testes de CRUD. Exercite cálculos, moeda,
 vencimento de períodos, sobreposição, autorização, concorrência, idempotência,
 edição, exclusão e integridade com Sheets simulados. Valide a interface vazia
 autenticada em produção sem criar serviços fictícios.
+
+## Visão geral financeira
+
+`?action=billingPortal&view=overview` usa a mesma autorização corporativa e
+`getFleetOverviewState`. Medições e o rateio individual nunca são enviados ao
+JSON público, ao quadro pai ou gravados no bundle. As propriedades privadas
+`FROTA_OVERVIEW_INSURANCE` contêm somente `{items:[{plate,premiumCents}]}`:
+os prêmios reais por veículo devem ser conferidos na apólice, não copiados para
+o repositório. A distribuição de cada parcela usa maiores restos em centavos.
+
+Todo período separa contratos mensais atuais de faturamento histórico. Um
+filtro dentro do mesmo mês inclui mensalidades previstas para o dia 25,
+exceto Prancha (KM × tarifa por viagem) e ativos com serviço já registrado no
+mês. Sobreposição de locação por hora e medição fica excluída do subtotal até
+conferência. Custos fixos são previsões, não comprovantes de pagamento; dados
+ausentes bloqueiam o resultado e ficam em notas de conferência, sem alertas
+operacionais. O histórico de pagamentos e as demais abas não são alterados.
+
+Teste adicional: `node --test apps/web/src/lib/fleetOverview.test.js`.

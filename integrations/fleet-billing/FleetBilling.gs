@@ -73,6 +73,14 @@ function getFleetBillingState() {
   const actor = fleetBillingReader_(), store = fleetBillingStore_();
   return { revision: store.revision, projects: store.projects, measurements: store.measurements, equipment: fleetBillingEquipment_(), account: actor, canWrite: fleetDocumentCanUpload_(actor) };
 }
+function getFleetOverviewState() {
+  const state = getFleetBillingState(); // Same corporate read authorization.
+  const raw = PropertiesService.getScriptProperties().getProperty('FROTA_OVERVIEW_INSURANCE');
+  if (!raw) throw new Error('O rateio individual da apólice ainda não foi configurado. Nenhum valor será dividido automaticamente.');
+  const config = JSON.parse(raw), items = config.items;
+  if (!Array.isArray(items) || !items.length || items.some(function (row) { return !/^[A-Z0-9]+$/.test(row.plate) || !Number.isSafeInteger(row.premiumCents) || row.premiumCents <= 0; }) || new Set(items.map(function (row) { return row.plate; })).size !== items.length) throw new Error('Configuração individual da apólice inválida. Confira antes de apurar o seguro.');
+  return { ...state, insuranceItems: items.map(function (row) { return { plate: row.plate, premiumCents: row.premiumCents }; }) };
+}
 function fleetBillingMutate_(input, type, deleting) {
   const actor = fleetBillingWriter_();
   if (!input || !/^[a-f0-9-]{36}$/i.test(String(input.operationId || ''))) throw new Error('Identificador da operação inválido.');
@@ -121,6 +129,7 @@ function fleetBillingPortal_(e) {
     const template = HtmlService.createTemplateFromFile('FleetBillingPortal');
     const nonce = String(e && e.parameter && e.parameter.frameId || '');
     template.frameId = /^[a-f0-9-]{36}$/i.test(nonce) ? nonce : '';
+    template.overview = String(e && e.parameter && e.parameter.view || '') === 'overview';
     return template.evaluate().setTitle('Faturamento — Projetos e Medições · AGROMIG').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (error) { return HtmlService.createHtmlOutput('<h2>Faturamento — Projetos e Medições</h2><p>Entre com sua conta corporativa @agromig.com.br. Acesso e gravações dependem das permissões existentes.</p>'); }
 }

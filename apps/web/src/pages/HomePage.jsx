@@ -107,6 +107,7 @@ const TIPO_COLORS = {
 };
 
 const TABS = [
+    { id: 'geral', label: 'Visão geral', icon: CircleDollarSign },
     { id: 'pendencias', label: 'Pendências', icon: Bell },
     { id: 'abastecimento', label: 'Abastecimento', icon: Fuel },
     { id: 'manutencao', label: 'Manutenção', icon: Wrench },
@@ -626,7 +627,7 @@ function KmSemanalDialog({ data, onSaved }) {
 
 export default function HomePage() {
     const { data, loading, error, refresh } = useFleetData();
-    const [tab, setTab] = useState('abastecimento');
+    const [tab, setTab] = useState('geral');
     const [filters, setFilters] = useState({ periodStart: '', periodEnd: '', projeto: 'all', posto: 'all', placa: 'all', tipoManutencao: 'all', servico: 'all', statusVeiculo: 'all' });
     const [periodOpen, setPeriodOpen] = useState(false);
     const [draftPeriod, setDraftPeriod] = useState({ from: undefined, to: undefined });
@@ -788,7 +789,7 @@ export default function HomePage() {
             </header>
 
             <main className="mx-auto max-w-[1200px] px-4 py-6 flex flex-col gap-6">
-                <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
+                {tab !== 'geral' && <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
                     <div>
                         <h2 className="font-semibold">Lançamentos operacionais</h2>
                         <p className="text-sm text-muted-foreground">Cadastre e valide os dados antes de alimentar as planilhas.</p>
@@ -803,9 +804,9 @@ export default function HomePage() {
                         <VehicleDocumentDialog mode="browse" />
                         <VehicleTagDialog />
                     </div>
-                </section>
+                </section>}
                 {/* Source notice */}
-                {data?.meta?.fields?.abastecimentoMotorista === false && (
+                {tab !== 'geral' && tab !== 'faturamento' && data?.meta?.fields?.abastecimentoMotorista === false && (
                     <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle className="text-sm font-semibold">Campo “motorista” não disponível em abastecimento</AlertTitle>
@@ -815,10 +816,10 @@ export default function HomePage() {
                     </Alert>
                 )}
 
-                {data?.kmSemanalLoading && (
+                {tab !== 'geral' && tab !== 'faturamento' && data?.kmSemanalLoading && (
                     <p className="text-xs text-muted-foreground" role="status">Conferindo KM semanal na planilha…</p>
                 )}
-                {data && kmSemanalStatus.warnings.length > 0 && (
+                {tab !== 'geral' && tab !== 'faturamento' && data && kmSemanalStatus.warnings.length > 0 && (
                     <Alert className="border-amber-300 bg-amber-50 text-amber-950">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle className="text-sm font-semibold">KM semanal — conferir competência</AlertTitle>
@@ -838,7 +839,7 @@ export default function HomePage() {
                         </AlertDescription>
                     </Alert>
                 )}
-                {data && kmSemanalStatus.pending.length > 0 && (
+                {tab !== 'geral' && tab !== 'faturamento' && data && kmSemanalStatus.pending.length > 0 && (
                     <Alert className="border-orange-300 bg-orange-50 text-orange-950 dark:bg-orange-950/40 dark:text-orange-100">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle className="text-sm font-semibold">
@@ -879,7 +880,7 @@ export default function HomePage() {
                 {data && (
                     <>
                         {/* Filters */}
-                        {tab !== 'faturamento' && tab !== 'bonificacoes' && <Card className="p-4">
+                        {tab !== 'geral' && tab !== 'faturamento' && tab !== 'bonificacoes' && <Card className="p-4">
                             <div className="flex flex-wrap items-end gap-3">
                                 <div className="flex flex-col gap-1">
                                     <label className="text-xs font-medium text-muted-foreground">Período</label>
@@ -944,6 +945,7 @@ export default function HomePage() {
                         </div>
 
                         {/* Tab content */}
+                        {tab === 'geral' && <FleetBillingWorkspace overview />}
                         {tab === 'pendencias' && <PendenciasView records={notificationRecords} activeCount={activeNotifications.length} onOpen={openNotification} />}
                         {tab === 'abastecimento' && <AbastecimentoView data={data} filters={filters} search={search} />}
                         {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
@@ -1677,12 +1679,14 @@ function OwnedVehiclesFinanceView({ data, period }) {
 }
 
 function FaturamentoView({ data }) {
-    return <Tabs defaultValue="medicoes" className="space-y-4">
+    return <Tabs defaultValue="geral" className="space-y-4">
         <TabsList aria-label="Subcategorias de faturamento" className="h-auto w-full justify-start flex-wrap gap-1 bg-green-50 border border-green-200 p-1.5">
+            <TabsTrigger value="geral" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Visão geral financeira</TabsTrigger>
             <TabsTrigger value="medicoes" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Projetos e medições</TabsTrigger>
-            <TabsTrigger value="resumo" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Visão geral</TabsTrigger>
+            <TabsTrigger value="resumo" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Parcelas e histórico</TabsTrigger>
             <TabsTrigger value="documentacao" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><FileCheck className="h-4 w-4" />Custos de documentação</TabsTrigger>
         </TabsList>
+        <TabsContent value="geral"><FleetBillingWorkspace overview /></TabsContent>
         <TabsContent value="medicoes"><FleetBillingWorkspace /></TabsContent>
         <TabsContent value="resumo"><FaturamentoOverview data={data} /></TabsContent>
         <TabsContent value="documentacao"><DocumentCostsFinanceView data={data} /></TabsContent>

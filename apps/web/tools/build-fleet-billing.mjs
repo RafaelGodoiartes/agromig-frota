@@ -8,6 +8,6 @@ const rules = fs.readFileSync(path.join(web, 'src/lib/billingMeasurements.js'), 
 fs.writeFileSync(path.join(integration, 'BillingRules.gs'), '// Generated from apps/web/src/lib/billingMeasurements.js. Do not hand-edit.\n' + rules);
 let html = fs.readFileSync(path.join(root, 'dist/apps/web/billing.html'), 'utf8');
 html = html.replace(/(?:src|href)="(\/agromig-frota\/[^" ]+)"/g, (_, asset) => `${_.startsWith('src') ? 'src' : 'href'}="https://rafaelgodoiartes.github.io${asset}"`);
-html = html.replace('</head>', '<script>window.FLEET_BILLING_FRAME = <?!= JSON.stringify(frameId) ?>;</script></head>');
+html = html.replace('</head>', '<script>window.FLEET_BILLING_FRAME = <?!= JSON.stringify(frameId) ?>;window.FLEET_OVERVIEW = <?!= JSON.stringify(overview) ?>;</script></head>');
 fs.writeFileSync(path.join(integration, 'FleetBillingPortal.html'), '<!-- Generated from the built billing.html; includes no customer data. -->\n' + html);
 console.log('BillingRules.gs and FleetBillingPortal.html generated.');
