@@ -875,9 +875,9 @@ export default function HomePage() {
                     </Alert>
                 )}
 
-                {loading && !data && <LoadingSkeleton />}
+                {loading && !data && tab !== 'geral' && <LoadingSkeleton />}
 
-                {data && (
+                {(data || tab === 'geral') && (
                     <>
                         {/* Filters */}
                         {tab !== 'geral' && tab !== 'faturamento' && tab !== 'bonificacoes' && <Card className="p-4">
