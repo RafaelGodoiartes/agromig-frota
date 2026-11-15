@@ -1687,7 +1687,7 @@ function FaturamentoView({ data }) {
             <TabsTrigger value="documentacao" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><FileCheck className="h-4 w-4" />Custos de documentação</TabsTrigger>
             <TabsTrigger value="terceiros" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><Truck className="h-4 w-4" />Terceiros</TabsTrigger>
         </TabsList>
-        <TabsContent value="geral"><FleetBillingWorkspace overview /></TabsContent>
+        <TabsContent value="geral"><FaturamentoOverview data={data} /></TabsContent>
         <TabsContent value="medicoes"><FleetBillingWorkspace /></TabsContent>
         <TabsContent value="resumo"><FaturamentoOverview data={data} /></TabsContent>
         <TabsContent value="documentacao"><DocumentCostsFinanceView data={data} /></TabsContent>
