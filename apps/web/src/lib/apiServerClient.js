@@ -115,6 +115,14 @@ function commandForRoute(route, input) {
             ],
         };
     }
+    if (route === '/fleet/terceiro') {
+        return {
+            action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Custos de Terceiros',
+            values: [text(input.data), text(input.prestador), text(input.placa).toUpperCase(),
+                text(input.servico), text(input.projeto), text(input.unidade), num(input.quantidade),
+                num(input.valor), text(input.observacoes)],
+        };
+    }
     if (route === '/fleet/manutencao') {
         const plate = text(input.placa).toUpperCase();
         const vehicle = registeredVehicleMetadata(data, plate, input);

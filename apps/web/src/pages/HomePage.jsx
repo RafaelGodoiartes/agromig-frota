@@ -1685,12 +1685,54 @@ function FaturamentoView({ data }) {
             <TabsTrigger value="medicoes" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Projetos e medições</TabsTrigger>
             <TabsTrigger value="resumo" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><CircleDollarSign className="h-4 w-4" />Parcelas e histórico</TabsTrigger>
             <TabsTrigger value="documentacao" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><FileCheck className="h-4 w-4" />Custos de documentação</TabsTrigger>
+            <TabsTrigger value="terceiros" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><Truck className="h-4 w-4" />Terceiros</TabsTrigger>
         </TabsList>
         <TabsContent value="geral"><FleetBillingWorkspace overview /></TabsContent>
         <TabsContent value="medicoes"><FleetBillingWorkspace /></TabsContent>
         <TabsContent value="resumo"><FaturamentoOverview data={data} /></TabsContent>
         <TabsContent value="documentacao"><DocumentCostsFinanceView data={data} /></TabsContent>
+        <TabsContent value="terceiros"><ThirdPartyCostsView data={data} /></TabsContent>
     </Tabs>;
+}
+
+function ThirdPartyCostsView({ data }) {
+    const [rows, setRows] = useState(() => Array.isArray(data?.custosTerceiros) ? data.custosTerceiros : []);
+    const [form, setForm] = useState({ data: localIsoDate(new Date()), prestador: '', placa: '', servico: '', projeto: '', unidade: '', quantidade: '', valor: '', observacoes: '' });
+    const [busy, setBusy] = useState(false);
+    const [message, setMessage] = useState('');
+    useEffect(() => { if (Array.isArray(data?.custosTerceiros)) setRows(data.custosTerceiros); }, [data?.custosTerceiros]);
+    const total = rows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0);
+    const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+    const submit = async (event) => {
+        event.preventDefault(); setMessage('');
+        const value = inputNumber(form.valor);
+        if (!form.data || !form.prestador.trim() || !form.servico.trim() || value === null) { setMessage('Informe data, prestador, serviço e valor.'); return; }
+        setBusy(true);
+        try {
+            const response = await apiServerClient.fetch('/fleet/terceiro', { method: 'POST', body: JSON.stringify({ ...form, valor }) });
+            if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || 'Não foi possível gravar o custo.');
+            setRows((current) => [{ ...form, id: `local-${Date.now()}`, valor }, ...current]);
+            setForm((current) => ({ ...current, prestador: '', placa: '', servico: '', projeto: '', quantidade: '', valor: '', observacoes: '' }));
+            setMessage('Lançamento gravado. Clique em Atualizar para sincronizar todos os dados.');
+        } catch (error) { setMessage(error.message); } finally { setBusy(false); }
+    };
+    return <section className="space-y-4" aria-label="Custos de terceiros">
+        <div><h2 className="text-lg font-semibold text-[#1f6b3d]">Terceiros</h2><p className="text-sm text-muted-foreground">Controle os serviços contratados de terceiros, com total já gasto e novos lançamentos separados da frota própria.</p></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><KpiCard label="Total gasto com terceiros" value={BRL(total)} sub={`${rows.length} lançamento(s)`} accent="text-amber-700" /><KpiCard label="Prestadores cadastrados" value={new Set(rows.map((row) => row.prestador).filter(Boolean)).size} /><KpiCard label="Veículos / serviços" value={new Set(rows.map((row) => row.placa || row.servico).filter(Boolean)).size} /></div>
+        <Card className="p-4 border-green-200 bg-[#f8fcf9]"><h3 className="font-semibold text-[#1f6b3d] mb-3">Novo lançamento de terceiro</h3><form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <Field label="Data"><Input type="date" value={form.data} onChange={(e) => update('data', e.target.value)} required /></Field>
+            <Field label="Prestador / empresa"><Input value={form.prestador} onChange={(e) => update('prestador', e.target.value)} placeholder="Nome do terceiro" required /></Field>
+            <Field label="Veículo / placa"><Input value={form.placa} onChange={(e) => update('placa', e.target.value)} placeholder="Opcional" /></Field>
+            <Field label="Serviço"><Input value={form.servico} onChange={(e) => update('servico', e.target.value)} placeholder="Ex.: transporte" required /></Field>
+            <Field label="Projeto / centro de custo"><Input value={form.projeto} onChange={(e) => update('projeto', e.target.value)} /></Field>
+            <Field label="Unidade"><Input value={form.unidade} onChange={(e) => update('unidade', e.target.value)} placeholder="KM, H, serviço…" /></Field>
+            <Field label="Quantidade"><Input inputMode="decimal" value={form.quantidade} onChange={(e) => update('quantidade', e.target.value)} /></Field>
+            <Field label="Valor (R$)"><Input inputMode="decimal" value={form.valor} onChange={(e) => update('valor', e.target.value)} placeholder="0,00" required /></Field>
+            <Field label="Observações" className="sm:col-span-2 lg:col-span-3"><Input value={form.observacoes} onChange={(e) => update('observacoes', e.target.value)} /></Field>
+            <div className="flex items-end"><Button type="submit" disabled={busy}>{busy ? 'Gravando…' : 'Salvar lançamento'}</Button></div>
+        </form>{message && <p className="text-sm mt-3 text-muted-foreground" role="status">{message}</p>}</Card>
+        <Card className="p-4"><div className="flex items-center justify-between gap-2 mb-3"><h3 className="font-semibold">Histórico de gastos com terceiros</h3><span className="text-sm font-semibold">Total: {BRL(total)}</span></div><ScrollTable head={<>{['Data', 'Prestador', 'Veículo / placa', 'Serviço', 'Projeto', 'Quantidade', 'Valor', 'Observações'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{rows.length ? rows.map((row) => <TableRow key={row.id}><TableCell>{formatDate(row.data)}</TableCell><TableCell>{row.prestador || '—'}</TableCell><TableCell>{row.placa || '—'}</TableCell><TableCell>{row.servico || '—'}</TableCell><TableCell>{row.projeto || '—'}</TableCell><TableCell className="text-right">{row.quantidade ?? '—'} {row.unidade}</TableCell><TableCell className="text-right font-medium">{BRL(row.valor)}</TableCell><TableCell>{row.observacoes || '—'}</TableCell></TableRow>) : <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nenhum gasto de terceiro lançado.</TableCell></TableRow>}</ScrollTable></Card>
+    </section>;
 }
 
 function DocumentCostsFinanceView({ data }) {
