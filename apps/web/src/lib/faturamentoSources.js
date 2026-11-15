@@ -4,6 +4,7 @@ const SPREADSHEET_ID = '1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM';
 const SOURCES = [
     { key: 'viagensLTU5A25', gid: 492186813, range: 'A5:O1000', firstRow: 5 },
     { key: 'locacoesRetroescavadeira', gid: 1053659329, range: 'A2:H1001', firstRow: 2 },
+    { key: 'custosTerceiros', gid: 273710707, range: 'A1:I1000', firstRow: 2 },
 ];
 
 // Read-only complement for deployed connectors that do not expose these tabs yet.
@@ -24,6 +25,14 @@ export function parseFinanceSheet(body, source) {
                 motorista: value(4), projeto: value(5), origem: value(6), destino: value(7),
                 descricao: value(8), valorMercadoria: value(9), status: value(10), observacoes: value(11),
                 kmTotal: value(12), valorCobrado: value(13), valorKm: value(14),
+            }];
+        }
+        if (source.key === 'custosTerceiros') {
+            if (!date(0) || (!value(1) && !value(2) && !value(3) && value(7) === '')) return [];
+            return [{
+                id: source.firstRow + index, data: date(0), prestador: value(1), placa: value(2),
+                servico: value(3), projeto: value(4), unidade: value(5), quantidade: value(6),
+                valor: value(7), observacoes: value(8),
             }];
         }
         if (!String(value(0)).trim() || !date(5)) return [];
