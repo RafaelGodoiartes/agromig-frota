@@ -4,7 +4,7 @@ import { abastecimentoCategory } from './abastecimentoTypes.js';
 import { mergeLaunchVehicles, registeredVehicleMetadata, registrationVehicle } from './launchVehicles.js';
 
 export const API_SERVER_URL = import.meta.env?.VITE_API_BASE_URL
-    || 'https://script.google.com/macros/s/AKfycbwC30lpHYigIiLK7Rz0Z3nP-5teqEXykCOkoZFLqLXgjfblaxj9cLTLJFOGUGD2-PKD/exec';
+    || 'https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec';
 
 const SHEET1_ID = '1_mGLa1rqNfuFdHyi3GwN1O0pFHvf9TTZKVwz5VCvjlc';
 const SHEET2_ID = '1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM';
