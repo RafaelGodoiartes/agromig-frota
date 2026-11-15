@@ -945,7 +945,7 @@ export default function HomePage() {
                         </div>
 
                         {/* Tab content */}
-                        {tab === 'geral' && <FleetBillingWorkspace overview />}
+                        {tab === 'geral' && <FaturamentoOverview data={data} />}
                         {tab === 'pendencias' && <PendenciasView records={notificationRecords} activeCount={activeNotifications.length} onOpen={openNotification} />}
                         {tab === 'abastecimento' && <AbastecimentoView data={data} filters={filters} search={search} />}
                         {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
