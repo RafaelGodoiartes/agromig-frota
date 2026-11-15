@@ -1709,9 +1709,9 @@ function ThirdPartyCostsView({ data }) {
         if (!form.data || !form.prestador.trim() || !form.servico.trim() || value === null) { setMessage('Informe data, prestador, serviço e valor.'); return; }
         setBusy(true);
         try {
-            const response = await apiServerClient.fetch('/fleet/terceiro', { method: 'POST', body: JSON.stringify({ ...form, valor }) });
+            const response = await apiServerClient.fetch('/fleet/terceiro', { method: 'POST', body: JSON.stringify({ ...form, valor: value }) });
             if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || 'Não foi possível gravar o custo.');
-            setRows((current) => [{ ...form, id: `local-${Date.now()}`, valor }, ...current]);
+            setRows((current) => [{ ...form, id: `local-${Date.now()}`, valor: value }, ...current]);
             setForm((current) => ({ ...current, prestador: '', placa: '', servico: '', projeto: '', quantidade: '', valor: '', observacoes: '' }));
             setMessage('Lançamento gravado. Clique em Atualizar para sincronizar todos os dados.');
         } catch (error) { setMessage(error.message); } finally { setBusy(false); }
