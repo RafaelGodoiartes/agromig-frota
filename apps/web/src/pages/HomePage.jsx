@@ -1789,10 +1789,25 @@ function FaturamentoOverview({ data }) {
     const invalidPeriod = period.from && period.to && period.from > period.to;
     const revenueRows = useMemo(() => invalidPeriod ? [] : buildRevenueRows(data, { ...period, equipment }), [data, period, equipment, invalidPeriod]);
     const maintenanceRows = useMemo(() => invalidPeriod ? [] : buildMaintenanceCostRows(data, { ...period, equipment }), [data, period, equipment, invalidPeriod]);
+    const thirdPartyRows = useMemo(() => {
+        if (invalidPeriod) return [];
+        const normalize = (value) => vehicleKey(value);
+        return (data.custosTerceiros || []).filter((row) => {
+            const date = String(row.data || '').slice(0, 10);
+            if (!date) return false;
+            if (period.from && date < period.from) return false;
+            if (period.to && date > period.to) return false;
+            if (equipment === FATURAMENTO_EQUIPMENT.TRUCK && row.placa && normalize(row.placa) !== 'LTU5A25') return false;
+            if (equipment === FATURAMENTO_EQUIPMENT.RETRO && row.placa && normalize(row.placa) === 'LTU5A25') return false;
+            return true;
+        });
+    }, [data.custosTerceiros, period, equipment, invalidPeriod]);
     const summary = useMemo(() => summarizeByEquipment(revenueRows, maintenanceRows), [revenueRows, maintenanceRows]);
     const revenueTotal = revenueRows.reduce((sum, row) => sum + row.amount, 0);
     const maintenanceTotal = maintenanceRows.reduce((sum, row) => sum + row.amount, 0);
-    const result = revenueTotal - maintenanceTotal;
+    const thirdPartyTotal = thirdPartyRows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0);
+    const variableTotal = maintenanceTotal + thirdPartyTotal;
+    const result = revenueTotal - variableTotal;
     const margin = revenueTotal ? (result / revenueTotal) * 100 : null;
     const revenueByMonth = useMemo(() => aggregateByMonth(revenueRows).map((row) => ({ ...row, label: `${row.month.slice(5)}/${row.month.slice(0, 4)}`, faturamento: row.value })), [revenueRows]);
     const costsByMonth = useMemo(() => aggregateByMonth(maintenanceRows).map((row) => ({ ...row, label: `${row.month.slice(5)}/${row.month.slice(0, 4)}`, custos: row.value })), [maintenanceRows]);
@@ -1869,6 +1884,8 @@ function FaturamentoOverview({ data }) {
                 <KpiCard label="Caminhão prancha" value={sourceReady ? BRL(summary.truck.revenue) : '—'} />
                 <KpiCard label="Retroescavadeira" value={sourceReady ? BRL(summary.retro.revenue) : '—'} />
                 <KpiCard label="Custo variável — Manutenção" value={sourceReady ? BRL(maintenanceTotal) : '—'} sub="Dos equipamentos e do período selecionados" accent="text-amber-700" />
+                <KpiCard label="Gastos com terceiros" value={sourceReady ? BRL(thirdPartyTotal) : '—'} sub={`${thirdPartyRows.length} lançamento(s) no período`} accent="text-amber-700" />
+                <KpiCard label="Despesas variáveis totais" value={sourceReady ? BRL(variableTotal) : '—'} sub="Manutenção + terceiros" accent="text-amber-700" />
                 <KpiCard label="Resultado líquido" value={sourceReady ? BRL(result) : '—'} accent={result >= 0 ? 'text-green-700' : 'text-red-700'} />
                 <KpiCard label="Margem" value={!sourceReady || margin === null ? '—' : `${NUM(margin, 1)}%`} sub={revenueTotal ? 'resultado / faturamento' : 'sem faturamento no período'} />
             </div>
@@ -1908,7 +1925,8 @@ function FaturamentoOverview({ data }) {
             <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Detalhamento de faturamento</h3>{revenueRows.length === 0 ? <EmptyHint>Nenhum serviço faturado para os filtros selecionados.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo', 'Cliente', 'Descrição', 'Origem / local', 'Destino', 'Horas / período', 'Valor faturado', 'Observações'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{revenueRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs">{row.client || '—'}</TableCell><TableCell className="text-xs max-w-[210px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.origin || '—'}</TableCell><TableCell className="text-xs">{row.destination || '—'}</TableCell><TableCell className="text-right text-xs">{row.duration || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}</div>
 
             <div className="flex justify-end text-sm font-semibold">Total faturado: {BRL(revenueTotal)}</div>
-            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Custo variável — Manutenção</h3>{maintenanceRows.length === 0 ? <EmptyHint>Nenhum custo de manutenção dos equipamentos no período selecionado.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo / categoria', 'Descrição', 'Fornecedor', 'Valor', 'Observação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{maintenanceRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs max-w-[260px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.supplier || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}<div className="flex justify-end text-sm font-semibold">Total de custo variável: {BRL(maintenanceTotal)}</div></div>
+            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Custo variável — Manutenção</h3>{maintenanceRows.length === 0 ? <EmptyHint>Nenhum custo de manutenção dos equipamentos no período selecionado.</EmptyHint> : <ScrollTable head={<>{['Data', 'Equipamento', 'Tipo / categoria', 'Descrição', 'Fornecedor', 'Valor', 'Observação'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{maintenanceRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell><TableCell className="text-xs">{row.equipment}</TableCell><TableCell className="text-xs">{row.type}</TableCell><TableCell className="text-xs max-w-[260px] truncate" title={row.description}>{row.description || '—'}</TableCell><TableCell className="text-xs">{row.supplier || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.amount)}</TableCell><TableCell className="text-xs">{row.notes || '—'}</TableCell></TableRow>)}</ScrollTable>}<div className="flex justify-end text-sm font-semibold">Total de manutenção: {BRL(maintenanceTotal)}</div></div>
+            <div className="flex flex-col gap-2"><h3 className="text-sm font-semibold text-foreground">Gastos com terceiros</h3>{thirdPartyRows.length === 0 ? <EmptyHint>Nenhum gasto com terceiros no período selecionado.</EmptyHint> : <ScrollTable head={<>{['Data', 'Prestador', 'Veículo / placa', 'Serviço', 'Projeto', 'Valor', 'Observações'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>{thirdPartyRows.map((row) => <TableRow key={row.id}><TableCell className="whitespace-nowrap text-xs">{formatDate(row.data)}</TableCell><TableCell className="text-xs">{row.prestador || '—'}</TableCell><TableCell className="text-xs">{row.placa || '—'}</TableCell><TableCell className="text-xs">{row.servico || '—'}</TableCell><TableCell className="text-xs">{row.projeto || '—'}</TableCell><TableCell className="text-right font-medium">{BRL(row.valor)}</TableCell><TableCell className="text-xs">{row.observacoes || '—'}</TableCell></TableRow>)}</ScrollTable>}<div className="flex justify-end text-sm font-semibold">Total de terceiros: {BRL(thirdPartyTotal)}</div></div>
             </>}
         </section>
     );
