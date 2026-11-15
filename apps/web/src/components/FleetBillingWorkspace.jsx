@@ -3,7 +3,7 @@ import { ExternalLink, ShieldCheck, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
-export const FLEET_BILLING_PORTAL_URL = 'https://script.google.com/a/macros/agromig.com.br/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec?action=billingPortal';
+export const FLEET_BILLING_PORTAL_URL = 'https://script.google.com/macros/s/AKfycbwO3DXAEi3PNg4u7ExG68xTMQft2ccWEhnRRu2k5MgVG8O7elGLA4z-26IHbou2lTZU/exec?action=billingPortal';
 
 export default function FleetBillingWorkspace({ overview = false }) {
     const [frameId] = useState(() => crypto.randomUUID());
