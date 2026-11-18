@@ -11,7 +11,7 @@ export function overviewRpc(method) {
         window.google.script.run.withSuccessHandler(value => { clearTimeout(timeout); resolve(value); }).withFailureHandler(error => { clearTimeout(timeout); reject(new Error(error.message || 'Falha na integração.')); })[method]();
     });
 }
-export function useFleetOverviewData() {
+export function useFleetOverviewData(enabled = true) {
     const [snapshot, setSnapshot] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
     const request = useRef(0), mounted = useRef(true), running = useRef(false);
     const load = useCallback(async () => {
@@ -35,9 +35,10 @@ export function useFleetOverviewData() {
         finally { clearTimeout(timeout); controller.abort(); running.current = false; if (mounted.current && id === request.current) setLoading(false); }
     }, []);
     useEffect(() => {
+        if (!enabled) return undefined;
         mounted.current = true; load();
         const interval = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
         return () => { mounted.current = false; request.current++; clearInterval(interval); };
-    }, [load]);
+    }, [load, enabled]);
     return { snapshot, loading, error, refresh: load };
 }

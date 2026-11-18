@@ -47,6 +47,7 @@ import VehicleTagDialog from '@/components/VehicleTagDialog';
 import VehicleInstallmentSummary from '@/components/VehicleInstallmentSummary';
 import DriverBonusesView from '@/components/DriverBonusesView';
 import FleetBillingWorkspace from '@/components/FleetBillingWorkspace';
+import FleetOverviewPortal from '@/components/FleetOverviewPortal';
 import { monthlyInstallmentExpense } from '@/lib/vehicleInstallments';
 import { launchPlateKey, mergeLaunchVehicles, registrationVehicle, selectRegisteredVehicle } from '@/lib/launchVehicles';
 import { summarizeWeeklyKm } from '@/lib/weeklyKm';
@@ -945,7 +946,7 @@ export default function HomePage() {
                         </div>
 
                         {/* Tab content */}
-                        {tab === 'geral' && (data ? <FaturamentoOverview data={data} /> : <LoadingSkeleton />)}
+                        {tab === 'geral' && (data ? <FleetOverviewPortal data={data} /> : <LoadingSkeleton />)}
                         {tab === 'pendencias' && <PendenciasView records={notificationRecords} activeCount={activeNotifications.length} onOpen={openNotification} />}
                         {tab === 'abastecimento' && <AbastecimentoView data={data} filters={filters} search={search} />}
                         {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
@@ -1690,7 +1691,7 @@ function FaturamentoView({ data }) {
             <TabsTrigger value="documentacao" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><FileCheck className="h-4 w-4" />Custos de documentação</TabsTrigger>
             <TabsTrigger value="terceiros" className="gap-2 data-[state=active]:bg-[#1f7a46] data-[state=active]:text-white"><Truck className="h-4 w-4" />Terceiros</TabsTrigger>
         </TabsList>
-        <TabsContent value="geral"><FaturamentoOverview data={data} /></TabsContent>
+        <TabsContent value="geral"><FleetOverviewPortal data={data} /></TabsContent>
         <TabsContent value="medicoes"><FleetBillingWorkspace /></TabsContent>
         <TabsContent value="resumo"><FaturamentoOverview data={data} /></TabsContent>
         <TabsContent value="documentacao"><DocumentCostsFinanceView data={data} /></TabsContent>
