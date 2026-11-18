@@ -1253,6 +1253,9 @@ function buildFleetNotifications(data) {
         const plate = String(row.placa || '').trim();
         const status = String(row.status || '').trim();
         if (!document || document === '#REF!' || !plate || plate === '#REF!' || status === 'OK') return;
+        // Contratos continuam disponíveis na aba Documentação para consulta,
+        // mas não entram no sino nem na lista de Pendências.
+        if (searchKey(document).includes('contrato')) return;
         const vehicle = vehicleByPlate.get(vehicleKey(plate));
         if (!isDocumentApplicable(vehicle, document)) return;
         const key = `documentacao:${vehicleKey(plate)}:${searchKey(document)}`;
