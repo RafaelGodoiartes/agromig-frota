@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { emptyVehicleTag, validateVehicleTag, vehicleTagDrawing, tagFaceSvg } from '@/lib/vehicleTag';
 
 // TAG supports vehicle, truck, and retroescavadeira (serial number).
+// Keep this form manual-only; no spreadsheet values are imported.
 const fields = [
     ['plate', 'Placa', 'text', 10, 'Ex.: TCP6B43'], ['model', 'Modelo do veículo', 'text', 60, 'Ex.: STRADA'],
     ['identifier', 'Identificação AGR', 'text', 18, 'Ex.: AGR-038'], ['releasedBy', 'Liberado por', 'text', 60, 'Nome do responsável'],
