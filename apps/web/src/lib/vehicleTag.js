@@ -31,7 +31,11 @@ export function tagDate(value) {
 
 export function normalizeVehicleTag(input) {
     const text = (field) => String(input[field] ?? '').trim().replace(/[\x00-\x1f]/g, ' ');
-    return { ...input, company: text('company'), plate: text('plate').toUpperCase().replace(/[\s-]/g, ''),
+    const vehicleType = text('vehicleType').toLowerCase();
+    const plate = vehicleType === 'retroescavadeira'
+        ? text('plate').toUpperCase()
+        : text('plate').toUpperCase().replace(/[\s-]/g, '');
+    return { ...input, company: text('company'), plate,
         model: text('model').toUpperCase(), identifier: text('identifier').toUpperCase(),
         releasedBy: text('releasedBy'), observations: text('observations'), lastReview: text('lastReview'),
         documentUrl: text('documentUrl'), lastReviewKm: tagKm(input.lastReviewKm), nextReviewKm: tagKm(input.nextReviewKm),
@@ -45,8 +49,10 @@ export function validateVehicleTag(input) {
     for (const [key, label, max] of [['company', 'Nome da empresa', 80], ['model', 'Modelo', 60], ['identifier', 'Identificação AGR', 18], ['releasedBy', 'Liberado por', 60]]) {
         if (!tag[key] || tag[key].length > max) errors[key] = `Informe ${label.toLowerCase()} com até ${max} caracteres.`;
     }
-    if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(tag.plate)) errors.plate = 'Informe uma placa brasileira válida, como TCP6B43 ou ABC1234.';
-    if (!['veiculo', 'caminhao'].includes(tag.vehicleType)) errors.vehicleType = 'Selecione veículo ou caminhão.';
+    if (tag.vehicleType === 'retroescavadeira') {
+        if (!/^[A-Z0-9][A-Z0-9 ./-]{1,39}$/.test(tag.plate)) errors.plate = 'Informe um número de série válido da retroescavadeira.';
+    } else if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(tag.plate)) errors.plate = 'Informe uma placa brasileira válida, como TCP6B43 ou ABC1234.';
+    if (!['veiculo', 'caminhao', 'retroescavadeira'].includes(tag.vehicleType)) errors.vehicleType = 'Selecione veículo, caminhão ou retroescavadeira.';
     if (!tagDate(tag.issueDate)) errors.issueDate = 'Informe uma data de emissão válida.';
     if (!tagDate(tag.lastReviewDate)) errors.lastReviewDate = 'Informe a data da última revisão.';
     if (tagDate(tag.issueDate) && tagDate(tag.lastReviewDate) && tag.lastReviewDate > tag.issueDate) errors.lastReviewDate = 'A última revisão não pode ser posterior à emissão da TAG.';
@@ -99,7 +105,7 @@ export function vehicleTagDrawing(input, assets = {}) {
     text(front, 'VEÍCULOS RODOVIÁRIOS', 4, 41, 92, 16, 1, true, true);
     text(front, tag.model || 'MODELO DO VEÍCULO', 5, 62, 90, 19, 3, true, true);
     text(front, tag.identifier || 'IDENTIFICAÇÃO AGR', 5, 83, 90, 22, 1, true, true);
-    text(front, `PLACA ${tag.plate || '_______'}`, 5, 108, 90, 22, 1, true, true);
+    text(front, `${tag.vehicleType === 'retroescavadeira' ? 'NÚMERO DE SÉRIE' : 'PLACA'} ${tag.plate || '_______'}`, 5, 108, 90, tag.vehicleType === 'retroescavadeira' ? 14 : 22, 2, true, true);
     text(front, 'RENOVAÇÃO DA PRÓXIMA TAG', 5, 117, 90, 12, 1, true, true);
     text(front, kmLabel(tag.nextReviewKm), 5, 128, 90, 18, 1, true, true);
     text(back, `Liberado por: ${tag.releasedBy || '________________'}`, 4, 7, 92, 9, 2, false, true);
