@@ -102,12 +102,19 @@ export function vehicleTagDrawing(input, assets = {}) {
     rect(front, 0, 0, 100, 18, '#ffffff', '#1f7a46');
     if (assets.logo) front.push({ type: 'image', src: assets.logo, x: 26, y: 4, width: 48, height: 10 });
     text(front, tag.company, 5, 23, 90, 9, 3, true, true);
-    text(front, 'VEÍCULOS RODOVIÁRIOS', 4, 41, 92, 16, 1, true, true);
+    text(front, tag.vehicleType === 'retroescavadeira' ? 'MÁQUINA' : 'VEÍCULOS RODOVIÁRIOS', 4, 41, 92, tag.vehicleType === 'retroescavadeira' ? 18 : 16, 1, true, true);
     text(front, tag.model || 'MODELO DO VEÍCULO', 5, 62, 90, 19, 3, true, true);
     text(front, tag.identifier || 'IDENTIFICAÇÃO AGR', 5, 83, 90, 22, 1, true, true);
-    text(front, `${tag.vehicleType === 'retroescavadeira' ? 'NÚMERO DE SÉRIE' : 'PLACA'} ${tag.plate || '_______'}`, 5, 108, 90, tag.vehicleType === 'retroescavadeira' ? 14 : 22, 2, true, true);
-    text(front, 'RENOVAÇÃO DA PRÓXIMA TAG', 5, 117, 90, 12, 1, true, true);
-    text(front, kmLabel(tag.nextReviewKm), 5, 128, 90, 18, 1, true, true);
+    if (tag.vehicleType === 'retroescavadeira') {
+        text(front, 'NÚMERO DE SÉRIE', 5, 103, 90, 12, 1, true, true);
+        text(front, tag.plate || '_______', 5, 112, 90, 10, 2, true, true);
+        text(front, 'RENOVAÇÃO DA PRÓXIMA TAG', 5, 125, 90, 9, 1, true, true);
+        text(front, kmLabel(tag.nextReviewKm), 5, 136, 90, 15, 1, true, true);
+    } else {
+        text(front, `PLACA ${tag.plate || '_______'}`, 5, 108, 90, 22, 1, true, true);
+        text(front, 'RENOVAÇÃO DA PRÓXIMA TAG', 5, 117, 90, 12, 1, true, true);
+        text(front, kmLabel(tag.nextReviewKm), 5, 128, 90, 18, 1, true, true);
+    }
     text(back, `Liberado por: ${tag.releasedBy || '________________'}`, 4, 7, 92, 9, 2, false, true);
     text(back, `Data: ${tagDate(tag.issueDate) || '__/__/____'}`, 4, 19, 92, 10, 1, false, true);
     rect(back, 3, 24, 94, 0.3, '#1f7a46');
