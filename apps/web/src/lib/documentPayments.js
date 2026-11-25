@@ -47,7 +47,7 @@ export async function loadDocumentPayments(fetcher = fetch) {
     } finally { clearTimeout(timeout); }
 }
 
-export function summarizeDocumentPayments(payments = [], vehicles = [], filters = {}, search = '') {
+export function summarizeDocumentPayments(payments = [], vehicles = [], filters = {}, search = '', plateCatalog = []) {
     const grouped = new Map();
     for (const vehicle of vehicles) {
         const plate = key(vehicle.placa);
@@ -56,6 +56,12 @@ export function summarizeDocumentPayments(payments = [], vehicles = [], filters 
         grouped.get(plate).push(vehicle);
     }
     const registry = [...grouped].map(([plate, rows]) => ({ ...rows[0], plate, possession: new Set(rows.map((row) => key(row.tipoPosse))).size === 1 ? key(rows[0].tipoPosse) : '' }));
+    const catalog = new Map();
+    for (const row of Array.isArray(plateCatalog) ? plateCatalog : []) {
+        const plate = key(row.plate || row.placa);
+        const possession = key(row.possession || row.tipoPosse || row.posse);
+        if (plate && possession) catalog.set(plate, possession);
+    }
     const splitKeys = (value) => text(value).split(/[;,|]/).map((part) => key(part)).filter(Boolean);
     const possessionLabel = (value) => {
         const values = splitKeys(value);
@@ -69,7 +75,14 @@ export function summarizeDocumentPayments(payments = [], vehicles = [], filters 
         const explicitMatches = explicitKeys.flatMap((plate) => registry.filter((vehicle) => vehicle.plate === plate));
         const matches = explicitMatches.length ? [...new Map(explicitMatches.map((vehicle) => [vehicle.plate, vehicle])).values()] : registry.filter((vehicle) => key(payment.vehicle) === vehicle.plate || (key(vehicle.veiculo) && key(payment.vehicle) === key(vehicle.veiculo)));
         const vehicle = matches.length === 1 ? matches[0] : null;
-        const possession = payment.possession ? possessionLabel(payment.possession) : (vehicle?.possession === 'PROPRIO' ? 'Próprio' : vehicle?.possession === 'LOCADO' ? 'Locado' : 'Sem classificação');
+        const catalogPossessions = [...new Set(explicitKeys.map((plate) => catalog.get(plate)).filter(Boolean))];
+        const possession = catalogPossessions.length === 1
+            ? possessionLabel(catalogPossessions[0])
+            : catalogPossessions.length > 1 && catalogPossessions.every((value) => value === catalogPossessions[0])
+                ? possessionLabel(catalogPossessions[0])
+                : payment.possession
+                    ? possessionLabel(payment.possession)
+                    : (vehicle?.possession === 'PROPRIO' ? 'Próprio' : vehicle?.possession === 'LOCADO' ? 'Locado' : 'Sem classificação');
         const displayPlate = explicitKeys.length ? explicitKeys.map((plate) => registry.find((item) => item.plate === plate)?.placa || plate).join(', ') : vehicle?.placa || '';
         return { ...payment, plate: displayPlate, project: vehicle?.projeto || '', possession };
     }).filter((row) => {

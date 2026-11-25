@@ -1749,7 +1749,7 @@ function DocumentCostsFinanceView({ data }) {
     const [localPlates, setLocalPlates] = useState([]);
     const registry = data.cadastroFinanceiro || data.veiculos || [];
     const exclusivePlates = useMemo(() => {
-        const rows = [...(data.placasDocumentacao || []), ...localPlates];
+        const rows = [...(data.placasDocumentacao || []), ...localPlates].filter((row) => searchKey(row.origin || '') === 'EXCLUSIVA' || !row.origin);
         const byPlate = new Map();
         rows.forEach((row) => { const plate = String(row.plate || row.placa || '').trim().toUpperCase(); if (plate) byPlate.set(vehicleKey(plate), { ...row, plate }); });
         return [...byPlate.values()].sort((a, b) => a.plate.localeCompare(b.plate, 'pt-BR'));
@@ -2255,7 +2255,7 @@ function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }
 }
 
 function DocumentPaymentSummary({ data, filters, search }) {
-    const costs = useMemo(() => summarizeDocumentPayments(data.pagamentosDocumentacao || [], data.cadastroFinanceiro || data.veiculos || [], filters, search), [data.pagamentosDocumentacao, data.cadastroFinanceiro, data.veiculos, filters, search]);
+    const costs = useMemo(() => summarizeDocumentPayments(data.pagamentosDocumentacao || [], data.cadastroFinanceiro || data.veiculos || [], filters, search, data.placasDocumentacao || []), [data.pagamentosDocumentacao, data.cadastroFinanceiro, data.veiculos, data.placasDocumentacao, filters, search]);
     const available = Array.isArray(data.pagamentosDocumentacao);
     const classified = !data.cadastroFinanceiroLoading && !data.cadastroFinanceiroError;
     return <section className="rounded-xl border border-green-200 bg-green-50/40 p-4 space-y-4">

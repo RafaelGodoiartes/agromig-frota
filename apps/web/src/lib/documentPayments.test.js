@@ -26,6 +26,13 @@ test('lê placa e posse cadastradas quando a planilha de pagamentos fornece esse
     assert.equal(result.rows[0].possession, 'Próprio');
     assert.equal(result.ownedCents, 10000);
 });
+test('classifica pela tabela Placas - Documentação quando a placa foi selecionada', () => {
+    const rows = parseDocumentPayments(body([['08/10/2026', 'Prestador', 'descrição antiga', 'CRLV', 100, 'AAA1B23', 'Locado']], ['DATA DO SERVIÇO', 'PRESTADOR DE SERVIÇO', 'VEÍCULO / PLACA', 'TIPO DE DOCUMENTAÇÃO', 'VALOR DO SERVIÇO (R$)', 'PLACA CADASTRADA', 'POSSE CADASTRADA']));
+    const result = summarizeDocumentPayments(rows, vehicles, {}, '', [{ plate: 'AAA1B23', possession: 'Próprio', origin: 'Cadastro de Veículos' }]);
+    assert.equal(result.rows[0].possession, 'Próprio');
+    assert.equal(result.ownedCents, 10000);
+    assert.equal(result.rentedCents, 0);
+});
 test('separa próprios, locados e não classificados sem duplicar veículos nem apagar pagamentos iguais', () => {
     const rows = parseDocumentPayments(body([['08/10/2026', 'P', 'aaa-1b23', 'CRLV', 100], ['08/10/2026', 'P', 'BBB2C34', 'Laudo', 200], ['08/10/2026', 'P', 'Não cadastrado', 'CRLV', 50], ['08/10/2026', 'P', 'aaa-1b23', 'CRLV', 100]]));
     const result = summarizeDocumentPayments(rows, [...vehicles, vehicles[0]]);

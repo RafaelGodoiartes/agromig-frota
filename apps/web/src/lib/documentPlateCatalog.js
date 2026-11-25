@@ -16,7 +16,6 @@ export function parseDocumentPlateCatalog(body) {
         const plate = text(values[0]).toUpperCase();
         if (!plate) return [];
         const origin = text(values[2]);
-        if (key(origin) !== 'EXCLUSIVA') return [];
         return [{ plate, possession: text(values[1]), origin, note: text(values[3]) }];
     });
 }
