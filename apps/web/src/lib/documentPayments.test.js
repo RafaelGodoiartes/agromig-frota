@@ -16,6 +16,16 @@ test('lê as colunas reais, datas Google/BR e valores em centavos; planilha vazi
     assert.equal(rows[1].amountCents, 20001);
     assert.deepEqual(parseDocumentPayments(body([])), []);
 });
+test('lê placa e posse cadastradas quando a planilha de pagamentos fornece esses campos', () => {
+    const cols = ['DATA DO SERVIÇO', 'PRESTADOR DE SERVIÇO', 'VEÍCULO / PLACA', 'TIPO DE DOCUMENTAÇÃO', 'VALOR DO SERVIÇO (R$)', 'PLACA CADASTRADA', 'POSSE CADASTRADA'];
+    const rows = parseDocumentPayments(body([['08/10/2026', 'Prestador', 'descrição antiga', 'CRLV', 100, 'AAA1B23', 'PRÓPRIO']], cols));
+    assert.equal(rows[0].plate, 'AAA1B23');
+    assert.equal(rows[0].possession, 'PRÓPRIO');
+    const result = summarizeDocumentPayments(rows, vehicles);
+    assert.equal(result.rows[0].plate, 'AAA1B23');
+    assert.equal(result.rows[0].possession, 'Próprio');
+    assert.equal(result.ownedCents, 10000);
+});
 test('separa próprios, locados e não classificados sem duplicar veículos nem apagar pagamentos iguais', () => {
     const rows = parseDocumentPayments(body([['08/10/2026', 'P', 'aaa-1b23', 'CRLV', 100], ['08/10/2026', 'P', 'BBB2C34', 'Laudo', 200], ['08/10/2026', 'P', 'Não cadastrado', 'CRLV', 50], ['08/10/2026', 'P', 'aaa-1b23', 'CRLV', 100]]));
     const result = summarizeDocumentPayments(rows, [...vehicles, vehicles[0]]);
