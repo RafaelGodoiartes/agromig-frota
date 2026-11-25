@@ -123,6 +123,19 @@ function commandForRoute(route, input) {
                 num(input.valor), text(input.observacoes)],
         };
     }
+    if (route === '/fleet/placa-documentacao') {
+        return {
+            action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Placas - Documentação',
+            values: [text(input.placa).toUpperCase(), text(input.posse || input.possession), 'Exclusiva', text(input.observacoes || input.note)],
+        };
+    }
+    if (route === '/fleet/pagamento-documentacao') {
+        const plate = text(input.placa).toUpperCase();
+        return {
+            action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Custos de Documentação',
+            values: [text(input.data), text(input.prestador), plate, text(input.documento), num(input.valor), plate, text(input.posse || input.possession)],
+        };
+    }
     if (route === '/fleet/manutencao') {
         const plate = text(input.placa).toUpperCase();
         const vehicle = registeredVehicleMetadata(data, plate, input);

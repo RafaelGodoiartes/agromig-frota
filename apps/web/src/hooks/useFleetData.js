@@ -4,6 +4,7 @@ import { loadFaturamentoSources } from '@/lib/faturamentoSources';
 import { loadAbastecimentoSources } from '@/lib/abastecimentoSources';
 import { loadOwnedVehicleRegistry } from '@/lib/ownedVehicleFinanceSources';
 import { loadDocumentPayments } from '@/lib/documentPayments';
+import { loadDocumentPlateCatalog } from '@/lib/documentPlateCatalog';
 import { loadWeeklyKmSources } from '@/lib/weeklyKmSources';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
@@ -72,6 +73,7 @@ export function useFleetData() {
     const abastecimentoRequestRef = useRef(0);
     const ownedFinanceRequestRef = useRef(0);
     const documentPaymentsRequestRef = useRef(0);
+    const documentPlateCatalogRequestRef = useRef(0);
     const weeklyKmRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
@@ -113,6 +115,7 @@ export function useFleetData() {
             const abastecimentoRequestId = ++abastecimentoRequestRef.current;
             const ownedFinanceRequestId = ++ownedFinanceRequestRef.current;
             const documentPaymentsRequestId = ++documentPaymentsRequestRef.current;
+            const documentPlateCatalogRequestId = ++documentPlateCatalogRequestRef.current;
             setData((current) => ({
                 ...enrichedJson,
                 viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
@@ -125,6 +128,9 @@ export function useFleetData() {
                 pagamentosDocumentacao: current?.pagamentosDocumentacao,
                 pagamentosDocumentacaoLoading: true,
                 pagamentosDocumentacaoError: null,
+                placasDocumentacao: current?.placasDocumentacao || [],
+                placasDocumentacaoLoading: true,
+                placasDocumentacaoError: null,
                 tiposAbastecimento: current?.tiposAbastecimento || ['Combustível', 'Graxa'],
                 itensAbastecimento: current?.itensAbastecimento || [],
                 outrosAbastecimentos: current?.outrosAbastecimentos || [],
@@ -188,6 +194,17 @@ export function useFleetData() {
                 .catch(() => setData((current) => (
                     current && documentPaymentsRequestRef.current === documentPaymentsRequestId
                         ? { ...current, pagamentosDocumentacaoLoading: false, pagamentosDocumentacaoError: 'Não foi possível atualizar os pagamentos de documentação. Clique em Atualizar para tentar novamente.' }
+                        : current
+                )));
+            loadDocumentPlateCatalog()
+                .then((placasDocumentacao) => setData((current) => (
+                    current && documentPlateCatalogRequestRef.current === documentPlateCatalogRequestId
+                        ? { ...current, placasDocumentacao, placasDocumentacaoLoading: false, placasDocumentacaoError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && documentPlateCatalogRequestRef.current === documentPlateCatalogRequestId
+                        ? { ...current, placasDocumentacaoLoading: false, placasDocumentacaoError: 'Não foi possível atualizar as placas exclusivas. Os últimos dados foram mantidos.' }
                         : current
                 )));
             loadEpicollectChecklist()

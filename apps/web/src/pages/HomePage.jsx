@@ -1743,11 +1743,40 @@ function DocumentCostsFinanceView({ data }) {
     const initialFilters = { periodStart: '', periodEnd: '', placa: 'all', posse: 'all', documento: 'all' };
     const [filters, setFilters] = useState(initialFilters);
     const [search, setSearch] = useState('');
+    const [plateForm, setPlateForm] = useState({ placa: '', posse: 'Sem classificação', observacoes: '' });
+    const [plateBusy, setPlateBusy] = useState(false);
+    const [plateMessage, setPlateMessage] = useState('');
+    const [localPlates, setLocalPlates] = useState([]);
     const registry = data.cadastroFinanceiro || data.veiculos || [];
-    const vehicleOptions = useMemo(() => uniqueOptions(summarizeDocumentPayments(data.pagamentosDocumentacao || [], registry).rows.map((row) => row.plate || row.vehicle)), [data.pagamentosDocumentacao, registry]);
+    const exclusivePlates = useMemo(() => {
+        const rows = [...(data.placasDocumentacao || []), ...localPlates];
+        const byPlate = new Map();
+        rows.forEach((row) => { const plate = String(row.plate || row.placa || '').trim().toUpperCase(); if (plate) byPlate.set(vehicleKey(plate), { ...row, plate }); });
+        return [...byPlate.values()].sort((a, b) => a.plate.localeCompare(b.plate, 'pt-BR'));
+    }, [data.placasDocumentacao, localPlates]);
+    const vehicleOptions = useMemo(() => uniqueOptions([
+        ...summarizeDocumentPayments(data.pagamentosDocumentacao || [], registry).rows.map((row) => row.plate || row.vehicle),
+        ...registry.map((row) => row.placa),
+        ...exclusivePlates.map((row) => row.plate),
+    ]), [data.pagamentosDocumentacao, registry, exclusivePlates]);
     const documentOptions = useMemo(() => uniqueOptions((data.pagamentosDocumentacao || []).map((row) => row.document)), [data.pagamentosDocumentacao]);
     const invalidPeriod = filters.periodStart && filters.periodEnd && filters.periodStart > filters.periodEnd;
     const changeFilter = (field, value) => setFilters((current) => ({ ...current, [field]: value }));
+    const registerExclusivePlate = async (event) => {
+        event.preventDefault();
+        const placa = String(plateForm.placa || '').trim().toUpperCase();
+        if (!placa || placa.length < 3) { setPlateMessage('Informe uma placa ou identificação válida.'); return; }
+        if (exclusivePlates.some((row) => vehicleKey(row.plate) === vehicleKey(placa))) { setPlateMessage('Essa placa já está cadastrada para a documentação.'); return; }
+        setPlateBusy(true); setPlateMessage('Salvando placa exclusiva…');
+        try {
+            const response = await apiServerClient.fetch('/fleet/placa-documentacao', { method: 'POST', body: JSON.stringify({ placa, posse: plateForm.posse, observacoes: plateForm.observacoes }) });
+            if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.message || 'Não foi possível salvar a placa.'); }
+            setLocalPlates((current) => [...current, { plate: placa, possession: plateForm.posse, note: plateForm.observacoes }]);
+            setPlateForm({ placa: '', posse: 'Sem classificação', observacoes: '' });
+            setPlateMessage(`Placa ${placa} cadastrada somente para esta aba.`);
+        } catch (error) { setPlateMessage(error.message || 'Não foi possível salvar a placa.'); }
+        finally { setPlateBusy(false); }
+    };
     const shortcut = (kind) => {
         const now = new Date();
         let from = '', to = '';
@@ -1768,6 +1797,17 @@ function DocumentCostsFinanceView({ data }) {
             <div><h2 className="text-lg font-semibold text-[#1f6b3d]">Custos de documentação</h2><p className="text-sm text-muted-foreground">Lance os serviços na planilha exclusiva e consulte os custos aqui. Estes valores não são misturados aos custos de manutenção.</p></div>
             <Button asChild variant="outline" className="gap-2"><a href={DOCUMENT_PAYMENTS_SHEET_URL} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" />Abrir planilha de lançamentos</a></Button>
         </div>
+        <Card className="p-4 space-y-3 border-[#cfe8d5] bg-[#f8fcf9]">
+            <div><h3 className="font-semibold text-[#1f6b3d]">Placas exclusivas da documentação</h3><p className="text-xs text-muted-foreground">Cadastre uma placa ou identificação que deve aparecer somente nesta aba. Ela não será adicionada ao Cadastro de Veículos.</p></div>
+            <form onSubmit={registerExclusivePlate} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 items-end">
+                <Field label="Nova placa / identificação"><Input value={plateForm.placa} onChange={(event) => setPlateForm((current) => ({ ...current, placa: event.target.value.toUpperCase() }))} placeholder="Ex.: EQU-001" required /></Field>
+                <Field label="Tipo de posse"><Select value={plateForm.posse} onValueChange={(value) => setPlateForm((current) => ({ ...current, posse: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Próprio', 'Locado', 'Sem classificação'].map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></Field>
+                <Field label="Observações"><Input value={plateForm.observacoes} onChange={(event) => setPlateForm((current) => ({ ...current, observacoes: event.target.value }))} placeholder="Opcional" /></Field>
+                <Button type="submit" disabled={plateBusy}>{plateBusy ? 'Salvando…' : 'Cadastrar placa exclusiva'}</Button>
+            </form>
+            {plateMessage && <p className="text-sm text-muted-foreground" role="status">{plateMessage}</p>}
+            {exclusivePlates.length > 0 && <p className="text-xs text-muted-foreground">Disponíveis para seleção nesta aba: {exclusivePlates.map((row) => row.plate).join(' · ')}</p>}
+        </Card>
         <Card className="p-4 space-y-3 bg-[#f8fcf9] border-[#cfe8d5]">
             <div className="flex flex-wrap items-end gap-3">
                 <Field label="Data inicial do serviço"><Input aria-label="Data inicial do serviço" type="date" value={filters.periodStart} onChange={(event) => changeFilter('periodStart', event.target.value)} className="w-full sm:w-44" /></Field>
