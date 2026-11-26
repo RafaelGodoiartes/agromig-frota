@@ -2183,6 +2183,17 @@ function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }
         return { valor, dias, count: rows.length, porTipo };
     }, [rows]);
 
+    const partsSummary = useMemo(() => summarizeMaintenanceParts(data.comprasPecas, {
+        from: filters.periodStart || '',
+        to: filters.periodEnd || '',
+        plate: filters.placa || 'all',
+        search,
+        currentDate: localIsoDate(new Date()),
+        vehicles: data.veiculos,
+    }), [data.comprasPecas, data.veiculos, filters.periodStart, filters.periodEnd, filters.placa, search]);
+    const partsValue = partsSummary.totalCents / 100;
+    const combinedMaintenanceValue = kpis.valor + partsValue;
+
     const porTipoValor = useMemo(() => {
         const map = { Preventiva: 0, Corretiva: 0, Outros: 0 };
         rows.forEach((r) => { map[r.tipo] += (r.custoTotal ?? r.valor ?? 0); });
@@ -2235,9 +2246,10 @@ function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }
                     </ScrollTable>
                 </div>
             )}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <KpiCard label="Chamados" value={NUM(kpis.count)} />
                 <KpiCard label="Custo total" value={BRL(kpis.valor)} accent="text-foreground" />
+                <KpiCard label="Manutenção + peças" value={partsSummary.available ? BRL(combinedMaintenanceValue) : '—'} sub={partsSummary.available ? `Manutenção ${BRL(kpis.valor)} · peças ${BRL(partsValue)}` : 'Compras de peças indisponíveis'} accent="text-green-800" />
                 <KpiCard label="Preventiva" value={NUM(kpis.porTipo.Preventiva)} accent="text-blue-600" active={typeFilter === 'Preventiva'} onClick={() => setTypeFilter((value) => value === 'Preventiva' ? 'all' : 'Preventiva')} />
                 <KpiCard label="Corretiva" value={NUM(kpis.porTipo.Corretiva)} accent="text-red-600" active={typeFilter === 'Corretiva'} onClick={() => setTypeFilter((value) => value === 'Corretiva' ? 'all' : 'Corretiva')} />
                 <KpiCard label="Dias parados" value={NUM(kpis.dias)} />
