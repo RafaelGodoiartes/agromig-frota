@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import apiServerClient from '@/lib/apiServerClient';
 import { loadFaturamentoSources } from '@/lib/faturamentoSources';
 import { loadAbastecimentoSources } from '@/lib/abastecimentoSources';
+import { loadAbastecimentoProjects } from '@/lib/abastecimentoProjects';
 import { loadOwnedVehicleRegistry } from '@/lib/ownedVehicleFinanceSources';
 import { loadDocumentPayments } from '@/lib/documentPayments';
 import { loadDocumentPlateCatalog } from '@/lib/documentPlateCatalog';
@@ -71,6 +72,7 @@ export function useFleetData() {
     const checklistRequestRef = useRef(0);
     const financeRequestRef = useRef(0);
     const abastecimentoRequestRef = useRef(0);
+    const abastecimentoProjectsRequestRef = useRef(0);
     const ownedFinanceRequestRef = useRef(0);
     const documentPaymentsRequestRef = useRef(0);
     const documentPlateCatalogRequestRef = useRef(0);
@@ -113,6 +115,7 @@ export function useFleetData() {
             const checklistRequestId = ++checklistRequestRef.current;
             const financeRequestId = ++financeRequestRef.current;
             const abastecimentoRequestId = ++abastecimentoRequestRef.current;
+            const abastecimentoProjectsRequestId = ++abastecimentoProjectsRequestRef.current;
             const ownedFinanceRequestId = ++ownedFinanceRequestRef.current;
             const documentPaymentsRequestId = ++documentPaymentsRequestRef.current;
             const documentPlateCatalogRequestId = ++documentPlateCatalogRequestRef.current;
@@ -136,6 +139,9 @@ export function useFleetData() {
                 outrosAbastecimentos: current?.outrosAbastecimentos || [],
                 abastecimentoExtrasLoading: true,
                 abastecimentoExtrasError: null,
+                projetosAbastecimentoCatalog: current?.projetosAbastecimentoCatalog || [],
+                projetosAbastecimentoCatalogLoading: true,
+                projetosAbastecimentoCatalogError: null,
                 checklist: current?.checklist ?? [],
                 checklistLoaded: current?.checklistLoaded === true,
                 checklistLoading: true,
@@ -161,6 +167,17 @@ export function useFleetData() {
                 .catch(() => setData((current) => (
                     current && abastecimentoRequestRef.current === abastecimentoRequestId
                         ? { ...current, abastecimentoExtrasLoading: false, abastecimentoExtrasError: 'Não foi possível atualizar as categorias e os lançamentos de graxa/lubrificantes. Os últimos dados foram mantidos; tente Atualizar novamente.' }
+                        : current
+                )));
+            loadAbastecimentoProjects()
+                .then((projects) => setData((current) => (
+                    current && abastecimentoProjectsRequestRef.current === abastecimentoProjectsRequestId
+                        ? { ...current, projetosAbastecimentoCatalog: projects, projetosAbastecimentoCatalogLoading: false, projetosAbastecimentoCatalogError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && abastecimentoProjectsRequestRef.current === abastecimentoProjectsRequestId
+                        ? { ...current, projetosAbastecimentoCatalogLoading: false, projetosAbastecimentoCatalogError: 'Não foi possível atualizar os projetos cadastrados. Os projetos já carregados continuam disponíveis.' }
                         : current
                 )));
             loadFaturamentoSources(enrichedJson)

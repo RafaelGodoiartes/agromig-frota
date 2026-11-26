@@ -225,6 +225,11 @@ function LancamentoDialog({ type, data, onSaved }) {
     const [postoSaving, setPostoSaving] = useState(false);
     const [postoMessage, setPostoMessage] = useState('');
     const [newPosto, setNewPosto] = useState({ nome: '', cnpj: '', cidade: '', observacoes: '' });
+    const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+    const [projectSaving, setProjectSaving] = useState(false);
+    const [projectMessage, setProjectMessage] = useState('');
+    const [newProject, setNewProject] = useState({ projeto: '', observacoes: '' });
+    const [localProjects, setLocalProjects] = useState([]);
     const masterVehicles = useMemo(() => mergeLaunchVehicles(data?.veiculos, registeredVehicles), [data?.veiculos, registeredVehicles]);
     const vehicles = useMemo(() => isFuel ? mergeLaunchVehicles(data?.veiculosAbastecimento, masterVehicles) : masterVehicles, [isFuel, data?.veiculosAbastecimento, masterVehicles]);
     const filteredVehicles = useMemo(() => {
@@ -239,6 +244,7 @@ function LancamentoDialog({ type, data, onSaved }) {
         const source = isFuel
             ? [
                 ...(data?.projetosAbastecimento || []),
+                ...(data?.projetosAbastecimentoCatalog || []).map((row) => row.project),
                 ...(data?.abastecimento || []).map((row) => row?.projeto),
                 ...masterVehicles.map((vehicle) => vehicle.projeto),
             ]
@@ -251,8 +257,14 @@ function LancamentoDialog({ type, data, onSaved }) {
                 const key = searchKey(value);
                 if (!unique.has(key)) unique.set(key, value);
             });
+        [...localProjects].forEach((value) => {
+            const project = String(value ?? '').trim();
+            if (!project) return;
+            const normalized = searchKey(project);
+            if (!unique.has(normalized)) unique.set(normalized, project);
+        });
         return [...unique.values()].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
-    }, [data, isFuel, masterVehicles]);
+    }, [data, isFuel, masterVehicles, localProjects]);
     const stations = useMemo(() => [...new Set([
         ...(data?.postos || []),
         ...(data?.abastecimento || []).map((r) => r.posto),
@@ -328,6 +340,25 @@ function LancamentoDialog({ type, data, onSaved }) {
             await onSaved?.();
         } catch (error) { setPostoMessage(error.message); } finally { setPostoSaving(false); }
     };
+    const registerProject = async (event) => {
+        event.preventDefault();
+        const projeto = String(newProject.projeto || '').trim();
+        if (!projeto) { setProjectMessage('Informe o nome do projeto.'); return; }
+        if (projects.some((value) => searchKey(value) === searchKey(projeto))) { setProjectMessage('Esse projeto já está disponível na lista.'); return; }
+        setProjectSaving(true); setProjectMessage('');
+        try {
+            const response = await apiServerClient.fetch('/fleet/projeto-abastecimento', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newProject) });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.message || 'Não foi possível cadastrar o projeto.');
+            setLocalProjects((current) => [...current, projeto]);
+            set('projeto', projeto);
+            setNewProject({ projeto: '', observacoes: '' });
+            setProjectDialogOpen(false);
+            setMessage(body.message || 'Projeto cadastrado e selecionado para este lançamento.');
+            await onSaved?.();
+        } catch (error) { setProjectMessage(error.message || 'Não foi possível cadastrar o projeto.'); }
+        finally { setProjectSaving(false); }
+    };
     const submit = async (event) => {
         event.preventDefault();
         setSaving(true); setMessage('');
@@ -391,7 +422,7 @@ function LancamentoDialog({ type, data, onSaved }) {
                     <Field label={isFuel ? 'Data' : 'Data do chamado'}><Input type="date" value={form.data} onChange={(e) => set('data', isFuel ? normalizeFuelDate(e.target.value) : e.target.value)} required /></Field>
                     <Field label="Placa / veículo"><Select value={form.placa} onValueChange={selectVehicle} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{filteredVehicles.map((v) => <SelectItem key={v.placa} value={v.placa}>{v.placa} · {v.veiculo}</SelectItem>)}</SelectContent></Select></Field>
                     <div className="sm:col-span-2"><Button type="button" variant="outline" className="gap-2" disabled={saving} onClick={() => setNewVehicleOpen(true)}><Plus className="h-4 w-4" />Cadastrar nova placa</Button><p className="mt-1 text-xs text-muted-foreground">A placa será gravada no Cadastro de Veículos e ficará disponível para manutenção e abastecimento.</p></div>
-                    <Field label="Projeto"><Select value={form.projeto} onValueChange={(v) => set('projeto', v)} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
+                    <div className="flex items-end gap-2"><div className="min-w-0 flex-1"><Field label="Projeto"><Select value={form.projeto} onValueChange={(v) => set('projeto', v)} required><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field></div>{isFuel && <Button type="button" variant="outline" size="icon" title="Cadastrar novo projeto" onClick={() => { setProjectMessage(''); setProjectDialogOpen(true); }}><Plus className="h-4 w-4" /></Button>}</div>
                     <Field label="KM / horímetro"><Input inputMode="decimal" value={form.km} onChange={(e) => set('km', e.target.value)} /></Field>
                     {isFuel ? <>
                         <Field label="Tipo de abastecimento"><Select value={form.categoria} onValueChange={(v) => setForm((current) => changeAbastecimentoCategory(current, v))} required><SelectTrigger aria-label="Tipo de abastecimento"><SelectValue /></SelectTrigger><SelectContent>{abastecimentoTypes.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></Field>
@@ -425,6 +456,17 @@ function LancamentoDialog({ type, data, onSaved }) {
                                 <Field label="Observações"><Input value={newPosto.observacoes} onChange={(e) => setNewPosto((v) => ({ ...v, observacoes: e.target.value }))} /></Field>
                                 {postoMessage && <p className="text-sm text-red-600">{postoMessage}</p>}
                                 <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setPostoDialogOpen(false)}>Cancelar</Button><Button type="submit" disabled={postoSaving}>{postoSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Cadastrar posto</Button></div>
+                            </form>
+                        </DialogContent>
+                    </Dialog>}
+                    {isFuel && <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader><DialogTitle>Cadastrar novo projeto</DialogTitle><DialogDescription>O projeto será salvo na aba Projetos - Abastecimento e ficará disponível nos próximos lançamentos.</DialogDescription></DialogHeader>
+                            <form onSubmit={registerProject} className="grid gap-3">
+                                <Field label="Nome do projeto"><Input value={newProject.projeto} onChange={(e) => setNewProject((current) => ({ ...current, projeto: e.target.value }))} placeholder="Ex.: Projeto novo" required autoFocus /></Field>
+                                <Field label="Observações"><Input value={newProject.observacoes} onChange={(e) => setNewProject((current) => ({ ...current, observacoes: e.target.value }))} placeholder="Opcional" /></Field>
+                                {projectMessage && <p className="text-sm text-red-600">{projectMessage}</p>}
+                                <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setProjectDialogOpen(false)}>Cancelar</Button><Button type="submit" disabled={projectSaving}>{projectSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Cadastrar projeto</Button></div>
                             </form>
                         </DialogContent>
                     </Dialog>}

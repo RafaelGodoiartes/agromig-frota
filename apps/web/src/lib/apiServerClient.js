@@ -101,6 +101,12 @@ function commandForRoute(route, input) {
             nome: text(input.nome), cnpj: text(input.cnpj), cidade: text(input.cidade), observacoes: text(input.observacoes),
         };
     }
+    if (route === '/fleet/projeto-abastecimento') {
+        return {
+            action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Projetos - Abastecimento',
+            values: [text(input.projeto), 'Cadastro manual', text(input.observacoes)],
+        };
+    }
     if (route === '/fleet/compra-peca') {
         return {
             action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Compras de Peças',
