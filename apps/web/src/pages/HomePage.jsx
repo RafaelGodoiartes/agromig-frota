@@ -2249,7 +2249,7 @@ function ManutencaoView({ data, filters, search, filterOptions, onFilterChange }
             <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                 <KpiCard label="Chamados" value={NUM(kpis.count)} />
                 <KpiCard label="Custo total" value={BRL(kpis.valor)} accent="text-foreground" />
-                <KpiCard label="Compras de peças" value={partsSummary.available ? BRL(partsValue) : '—'} sub={partsSummary.available ? 'Gasto de peças no período' : 'Compras de peças indisponíveis'} accent="text-amber-700" />
+                <KpiCard label="Compras de peças" value={partsSummary.available ? BRL(partsValue) : '—'} sub={partsSummary.available ? 'Peças compradas no período' : 'Compras de peças indisponíveis'} accent="text-amber-700" />
                 <KpiCard label="Manutenção + peças" value={partsSummary.available ? BRL(combinedMaintenanceValue) : '—'} sub={partsSummary.available ? `Manutenção ${BRL(kpis.valor)} · peças ${BRL(partsValue)}` : 'Compras de peças indisponíveis'} accent="text-green-800" />
                 <KpiCard label="Preventiva" value={NUM(kpis.porTipo.Preventiva)} accent="text-blue-600" active={typeFilter === 'Preventiva'} onClick={() => setTypeFilter((value) => value === 'Preventiva' ? 'all' : 'Preventiva')} />
                 <KpiCard label="Corretiva" value={NUM(kpis.porTipo.Corretiva)} accent="text-red-600" active={typeFilter === 'Corretiva'} onClick={() => setTypeFilter((value) => value === 'Corretiva' ? 'all' : 'Corretiva')} />
