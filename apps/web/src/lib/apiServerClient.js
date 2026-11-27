@@ -121,6 +121,30 @@ function commandForRoute(route, input) {
             ],
         };
     }
+    if (route === '/fleet/servico-nao-manutencao') {
+        const existingIds = (data.outrosServicos || []).map((row) => Number(row.id)).filter(Number.isFinite);
+        // A leitura direta da nova aba é feita pelo navegador, enquanto o
+        // Apps Script ainda não expõe esse campo no payload principal. Use um
+        // identificador sequencial quando possível e um carimbo único como
+        // fallback para não repetir IDs entre lançamentos.
+        const nextId = existingIds.length ? Math.max(...existingIds) + 1 : Date.now();
+        return {
+            action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Lavagem e Outros Serviços',
+            values: [
+                nextId,
+                text(input.data),
+                text(input.prestador),
+                text(input.placa).toUpperCase(),
+                text(input.tipo),
+                text(input.descricao),
+                text(input.projeto),
+                text(input.unidade),
+                num(input.quantidade),
+                num(input.valor),
+                text(input.observacoes),
+            ],
+        };
+    }
     if (route === '/fleet/terceiro') {
         return {
             action: 'append', spreadsheetId: SHEET2_ID, sheetName: 'Custos de Terceiros',

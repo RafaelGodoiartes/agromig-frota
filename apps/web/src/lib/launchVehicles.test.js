@@ -31,6 +31,17 @@ test('metadados informados pelo cadastro suprem atualização atrasada sem troca
     assert.equal(commandForRoute('/fleet/abastecimento', { ...supplied, placa: 'NOVO1', data: '2026-10-06' }).values[2], 'Nova escavadeira');
 });
 
+test('lançamento de lavagem ou outro serviço usa a nova aba sem misturar manutenção', () => {
+    const command = commandForRoute('/fleet/servico-nao-manutencao', {
+        data: '2026-11-27', prestador: 'Lava-jato Agromig', placa: 'ABC1D23', tipo: 'Lavagem',
+        descricao: 'Lavagem completa', projeto: 'Projeto A', unidade: 'serviço', quantidade: '1', valor: '150,00', observacoes: 'Sem manutenção',
+    });
+    assert.equal(command.action, 'append');
+    assert.equal(command.sheetName, 'Lavagem e Outros Serviços');
+    assert.equal(Number.isFinite(Number(command.values[0])), true);
+    assert.deepEqual(command.values.slice(1), ['2026-11-27', 'Lava-jato Agromig', 'ABC1D23', 'Lavagem', 'Lavagem completa', 'Projeto A', 'serviço', 1, 150, 'Sem manutenção']);
+});
+
 test('API confirma cadastro antes de usar nova placa e mantém sequência da manutenção; falha não é sucesso local', async () => {
     const oldWindow = globalThis.window;
     const requests = [];

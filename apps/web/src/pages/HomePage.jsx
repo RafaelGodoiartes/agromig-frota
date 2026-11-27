@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet';
 import {
     Fuel, Wrench, FileCheck, Gauge, RefreshCw, AlertTriangle,
     Search, X, Info, Loader2, CalendarDays, ExternalLink, Truck, UsersRound, Plus, ClipboardCheck,
-    Bell, CheckCircle2, Clock3, ListFilter, PackageOpen, CircleDollarSign,
+    Bell, CheckCircle2, Clock3, ListFilter, PackageOpen, CircleDollarSign, Droplets,
 } from 'lucide-react';
 import {
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -112,6 +112,7 @@ const TABS = [
     { id: 'pendencias', label: 'Pendências', icon: Bell },
     { id: 'abastecimento', label: 'Abastecimento', icon: Fuel },
     { id: 'manutencao', label: 'Manutenção', icon: Wrench },
+    { id: 'servicos', label: 'Lavagem / outros', icon: Droplets },
     { id: 'documentacao', label: 'Documentação', icon: FileCheck },
     { id: 'km', label: 'KM Rodado', icon: Gauge },
     { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
@@ -614,6 +615,71 @@ function CompraPecaDialog({ data, onSaved }) {
     );
 }
 
+function ServicoNaoManutencaoDialog({ data, onSaved }) {
+    const [open, setOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState('');
+    const [form, setForm] = useState({ data: today(), prestador: '', placa: '__sem_veiculo__', tipo: 'Lavagem', descricao: '', projeto: '', unidade: 'serviço', quantidade: '1', valor: '', observacoes: '' });
+    const vehicles = useMemo(() => {
+        const map = new Map();
+        [...(data?.veiculos || []), ...(data?.veiculosAbastecimento || [])].forEach((vehicle) => {
+            const placa = String(vehicle?.placa || '').trim().toUpperCase();
+            if (placa && !map.has(placa)) map.set(placa, { ...vehicle, placa });
+        });
+        return [...map.values()].sort((a, b) => a.placa.localeCompare(b.placa, 'pt-BR'));
+    }, [data]);
+    const projects = useMemo(() => [...new Set([
+        ...(data?.projetosAbastecimento || []),
+        ...(data?.projetosAbastecimentoCatalog || []).map((row) => row.project),
+        ...(data?.veiculos || []).map((row) => row.projeto),
+    ].map((value) => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [data]);
+    const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+    const submit = async (event) => {
+        event.preventDefault();
+        setSaving(true); setMessage('');
+        const value = inputNumber(form.valor);
+        const quantity = inputNumber(form.quantidade);
+        if (!form.data) { setMessage('Informe a data do serviço.'); setSaving(false); return; }
+        if (!form.descricao.trim()) { setMessage('Informe a descrição do serviço.'); setSaving(false); return; }
+        if (value === null || value < 0) { setMessage('Informe um valor total válido.'); setSaving(false); return; }
+        if (quantity !== null && quantity < 0) { setMessage('A quantidade não pode ser negativa.'); setSaving(false); return; }
+        try {
+            const response = await apiServerClient.fetch('/fleet/servico-nao-manutencao', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...form, placa: form.placa === '__sem_veiculo__' ? '' : form.placa, valor: value, quantidade: quantity }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.message || 'Não foi possível salvar o serviço.');
+            setMessage(body.message || 'Serviço gravado na planilha.');
+            setForm({ data: today(), prestador: '', placa: '__sem_veiculo__', tipo: 'Lavagem', descricao: '', projeto: '', unidade: 'serviço', quantidade: '1', valor: '', observacoes: '' });
+            setTimeout(() => setOpen(false), 900);
+            try { await onSaved?.(); } catch (refreshError) { console.warn('Serviço salvo, mas o painel não atualizou imediatamente.', refreshError); }
+        } catch (error) { setMessage(error.message); } finally { setSaving(false); }
+    };
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild><Button variant="outline" className="gap-2"><Droplets className="h-4 w-4" />Nova lavagem / outro serviço</Button></DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                <DialogHeader><DialogTitle>Registrar lavagem ou outro serviço</DialogTitle><DialogDescription>Use esta aba para gastos operacionais que não são manutenção. O lançamento será gravado em “Lavagem e Outros Serviços”.</DialogDescription></DialogHeader>
+                <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Data do serviço"><Input type="date" value={form.data} onChange={(event) => set('data', event.target.value)} required /></Field>
+                    <Field label="Tipo de serviço"><Select value={form.tipo} onValueChange={(value) => set('tipo', value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Lavagem">Lavagem</SelectItem><SelectItem value="Outro">Outro</SelectItem></SelectContent></Select></Field>
+                    <Field label="Prestador / empresa"><Input value={form.prestador} onChange={(event) => set('prestador', event.target.value)} placeholder="Ex.: Lava-jato ou fornecedor" /></Field>
+                    <Field label="Veículo / placa"><Select value={form.placa} onValueChange={(value) => set('placa', value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__sem_veiculo__">Sem veículo vinculado</SelectItem>{vehicles.map((vehicle) => <SelectItem key={vehicle.placa} value={vehicle.placa}>{vehicle.placa} · {vehicle.veiculo}</SelectItem>)}</SelectContent></Select></Field>
+                    <Field label="Descrição"><Input value={form.descricao} onChange={(event) => set('descricao', event.target.value)} placeholder="Ex.: lavagem completa" required /></Field>
+                    <Field label="Projeto / centro de custo"><Select value={form.projeto || '__sem_projeto__'} onValueChange={(value) => set('projeto', value === '__sem_projeto__' ? '' : value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__sem_projeto__">Sem projeto</SelectItem>{projects.map((project) => <SelectItem key={project} value={project}>{project}</SelectItem>)}</SelectContent></Select></Field>
+                    <Field label="Unidade"><Input value={form.unidade} onChange={(event) => set('unidade', event.target.value)} placeholder="serviço, diária, unidade…" /></Field>
+                    <Field label="Quantidade"><Input inputMode="decimal" value={form.quantidade} onChange={(event) => set('quantidade', event.target.value)} /></Field>
+                    <Field label="Valor total (R$)"><Input inputMode="decimal" value={form.valor} onChange={(event) => set('valor', event.target.value)} placeholder="Ex.: 150,00" required /></Field>
+                    <div className="sm:col-span-2"><Field label="Observações"><Input value={form.observacoes} onChange={(event) => set('observacoes', event.target.value)} placeholder="Opcional" /></Field></div>
+                    <div className="sm:col-span-2 flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{message}</p><Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar serviço</Button></div>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function KmSemanalDialog({ data, onSaved }) {
     const [open, setOpen] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -841,6 +907,7 @@ export default function HomePage() {
                         <LancamentoDialog type="abastecimento" data={data} onSaved={refresh} />
                         <LancamentoDialog type="manutencao" data={data} onSaved={refresh} />
                         <CompraPecaDialog data={data} onSaved={refresh} />
+                        <ServicoNaoManutencaoDialog data={data} onSaved={refresh} />
                         <KmSemanalDialog data={data} onSaved={refresh} />
                         <VeiculoDialog data={data} onSaved={refresh} />
                         <VehicleDocumentDialog />
@@ -992,6 +1059,7 @@ export default function HomePage() {
                         {tab === 'pendencias' && <PendenciasView records={notificationRecords} activeCount={activeNotifications.length} onOpen={openNotification} />}
                         {tab === 'abastecimento' && <AbastecimentoView data={data} filters={filters} search={search} />}
                         {tab === 'manutencao' && <ManutencaoView data={data} filters={filters} search={search} filterOptions={options} onFilterChange={setF} />}
+                        {tab === 'servicos' && <ServicosNaoManutencaoView data={data} filters={filters} search={search} />}
                         {tab === 'documentacao' && <DocumentacaoView data={data} filters={filters} search={search} />}
                         {tab === 'km' && <KmView data={data} filters={filters} search={search} />}
                         {tab === 'checklist' && <ChecklistView data={data} filters={filters} search={search} />}
@@ -2135,6 +2203,43 @@ function MaintenancePartsPanel({ data, filters, search }) {
                     <div className="rounded-lg bg-white border border-green-200 p-3 text-right font-semibold text-green-950">{view === 'veiculos' ? 'Total vinculado aos veículos' : view === 'caras' ? 'Total das 10 maiores compras' : view === 'estoque' ? 'Valor conhecido em estoque' : 'Total conhecido no período'}: {formatFinanceBRL(view === 'veiculos' ? result.vehicles.reduce((sum, row) => sum + row.amountCents, 0) : selectedTotal)}</div>
                 </div>
             </>}
+        </section>
+    );
+}
+
+function ServicosNaoManutencaoView({ data, filters, search }) {
+    const rows = useMemo(() => (data?.outrosServicos || []).filter((row) => {
+        const date = String(row.data || '').slice(0, 10);
+        if (filters.periodStart && date && date < filters.periodStart) return false;
+        if (filters.periodEnd && date && date > filters.periodEnd) return false;
+        if (filters.placa !== 'all' && String(row.placa || '').toUpperCase() !== String(filters.placa || '').toUpperCase()) return false;
+        if (filters.projeto !== 'all' && String(row.projeto || '') !== String(filters.projeto || '')) return false;
+        const query = searchKey(search);
+        return !query || searchKey(`${row.tipo} ${row.prestador} ${row.placa} ${row.descricao} ${row.projeto} ${row.observacoes}`).includes(query);
+    }).sort((a, b) => String(b.data || '').localeCompare(String(a.data || ''))), [data?.outrosServicos, filters.periodStart, filters.periodEnd, filters.placa, filters.projeto, search]);
+    const total = useMemo(() => rows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0), [rows]);
+    const lavagens = rows.filter((row) => searchKey(row.tipo) === 'lavagem').length;
+    const outros = rows.length - lavagens;
+    return (
+        <section className="flex flex-col gap-5">
+            {data?.outrosServicosError && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle className="h-4 w-4" /><AlertTitle>Lavagem e outros serviços não atualizados</AlertTitle><AlertDescription>{data.outrosServicosError}</AlertDescription></Alert>}
+            <div className="flex items-start gap-3 rounded-2xl border border-cyan-200 bg-cyan-50/40 p-4">
+                <Droplets className="mt-1 h-6 w-6 shrink-0 text-cyan-700" />
+                <div><h2 className="text-lg font-semibold text-cyan-950">Lavagem e outros serviços</h2><p className="text-sm text-muted-foreground">Lançamentos operacionais separados do histórico de manutenção, com origem na aba “Lavagem e Outros Serviços”.</p></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <KpiCard label="Total gasto" value={BRL(total)} accent="text-cyan-800" />
+                <KpiCard label="Lançamentos" value={NUM(rows.length)} />
+                <KpiCard label="Lavagens" value={NUM(lavagens)} accent="text-cyan-700" />
+                <KpiCard label="Outros serviços" value={NUM(outros)} accent="text-slate-700" />
+            </div>
+            <Card className="p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-semibold">Lançamentos registrados</h3><p className="text-xs text-muted-foreground">O período, projeto, placa e busca seguem os filtros do painel.</p></div><Badge variant="outline">{rows.length} registro(s)</Badge></div>
+                <div className="mt-4">{rows.length === 0 ? <EmptyHint>Nenhuma lavagem ou outro serviço para os filtros selecionados.</EmptyHint> : <ScrollTable head={<>{['Data', 'Tipo', 'Prestador', 'Veículo / placa', 'Descrição', 'Projeto', 'Quantidade', 'Valor', 'Observações'].map((heading) => <TableHead key={heading}>{heading}</TableHead>)}</>}>
+                    {rows.map((row) => <TableRow key={row.id || `${row.data}-${row.placa}-${row.descricao}`}><TableCell className="whitespace-nowrap">{row.data ? formatDate(row.data) : '—'}</TableCell><TableCell><Badge variant="outline" className={searchKey(row.tipo) === 'lavagem' ? 'border-cyan-300 text-cyan-800' : ''}>{row.tipo || 'Outro'}</Badge></TableCell><TableCell>{row.prestador || '—'}</TableCell><TableCell className="font-mono text-xs">{row.placa || 'Sem veículo'}</TableCell><TableCell className="max-w-[240px] truncate" title={row.descricao}>{row.descricao || '—'}</TableCell><TableCell>{row.projeto || '—'}</TableCell><TableCell className="text-right">{row.quantidade ?? '—'} {row.unidade || ''}</TableCell><TableCell className="text-right font-semibold">{BRL(row.valor)}</TableCell><TableCell className="max-w-[220px] truncate" title={row.observacoes}>{row.observacoes || '—'}</TableCell></TableRow>)}
+                </ScrollTable>}</div>
+                <div className="mt-3 flex justify-end text-sm font-semibold text-cyan-950">Total no período: {BRL(total)}</div>
+            </Card>
         </section>
     );
 }

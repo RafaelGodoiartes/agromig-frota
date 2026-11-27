@@ -7,6 +7,7 @@ import { loadOwnedVehicleRegistry } from '@/lib/ownedVehicleFinanceSources';
 import { loadDocumentPayments } from '@/lib/documentPayments';
 import { loadDocumentPlateCatalog } from '@/lib/documentPlateCatalog';
 import { loadWeeklyKmSources } from '@/lib/weeklyKmSources';
+import { loadOtherServices } from '@/lib/outrosServicos';
 
 const EPICOLLECT_CHECKLIST_URL = 'https://five.epicollect.net/api/export/entries/checklist-de-veiculos-e-maquinas?per_page=500&sort_by=created_at&sort_order=DESC&format=json&headers=true';
 const VEHICLE_LIMITS_URL = 'https://docs.google.com/spreadsheets/d/1DieFJq4Bt3Q3UBBcLefdVioSkVAG5BMiuXjiwEcrRoM/gviz/tq?tqx=out:json&gid=1477905702&tq=select%20A%2CE%2CI';
@@ -77,6 +78,7 @@ export function useFleetData() {
     const documentPaymentsRequestRef = useRef(0);
     const documentPlateCatalogRequestRef = useRef(0);
     const weeklyKmRequestRef = useRef(0);
+    const otherServicesRequestRef = useRef(0);
 
     const load = useCallback(async (force = false) => {
         if (loadingRef.current) return;
@@ -84,6 +86,7 @@ export function useFleetData() {
         setLoading(true);
         setError(null);
         const weeklyKmRequestId = ++weeklyKmRequestRef.current;
+        const otherServicesRequestId = ++otherServicesRequestRef.current;
         // Start alongside the main connector, before the heavy dashboard render
         // and the other background integrations compete for network/CPU time.
         const weeklyKmPromise = loadWeeklyKmSources()
@@ -119,6 +122,7 @@ export function useFleetData() {
             const ownedFinanceRequestId = ++ownedFinanceRequestRef.current;
             const documentPaymentsRequestId = ++documentPaymentsRequestRef.current;
             const documentPlateCatalogRequestId = ++documentPlateCatalogRequestRef.current;
+            const currentOtherServicesRequestId = otherServicesRequestId;
             setData((current) => ({
                 ...enrichedJson,
                 viagensLTU5A25: enrichedJson.viagensLTU5A25 ?? current?.viagensLTU5A25,
@@ -149,6 +153,9 @@ export function useFleetData() {
                 kmSemanalSource: current?.kmSemanalSource,
                 kmSemanalLoading: true,
                 kmSemanalError: null,
+                outrosServicos: current?.outrosServicos || [],
+                outrosServicosLoading: true,
+                outrosServicosError: null,
             }));
             weeklyKmPromise
                 .then(({ source, error }) => setData((current) => (
@@ -222,6 +229,17 @@ export function useFleetData() {
                 .catch(() => setData((current) => (
                     current && documentPlateCatalogRequestRef.current === documentPlateCatalogRequestId
                         ? { ...current, placasDocumentacaoLoading: false, placasDocumentacaoError: 'Não foi possível atualizar as placas exclusivas. Os últimos dados foram mantidos.' }
+                        : current
+                )));
+            loadOtherServices()
+                .then((outrosServicos) => setData((current) => (
+                    current && otherServicesRequestRef.current === currentOtherServicesRequestId
+                        ? { ...current, outrosServicos, outrosServicosLoading: false, outrosServicosError: null }
+                        : current
+                )))
+                .catch(() => setData((current) => (
+                    current && otherServicesRequestRef.current === currentOtherServicesRequestId
+                        ? { ...current, outrosServicosLoading: false, outrosServicosError: 'Não foi possível atualizar os lançamentos de lavagem e outros serviços. Os últimos dados carregados foram mantidos.' }
                         : current
                 )));
             loadEpicollectChecklist()
